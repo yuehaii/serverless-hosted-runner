@@ -1,0 +1,88 @@
+name: Build Image CI
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - src/*
+      - runner/*
+      - cache/*
+      - module/*
+      - template/*
+      - agent/*
+      - Makefile
+  pull_request:
+    branches: [ main ]
+    paths:
+      - src/*
+      - src/*/*
+      - runner/*
+      - cache/*
+      - module/*
+      - template/*
+      - agent/*
+      - Makefile
+  workflow_dispatch: 
+    inputs:
+      version:
+        type: string
+        description: 'image version'
+        required: false 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  ALICLOUD_REGION: ${{ vars.ALICLOUD_REGION }}
+  TF_VAR_IMAGE_RETRIEVE_USERNAME: ${{ secrets.TF_VAR_IMAGE_RETRIEVE_USERNAME }}
+  TF_VAR_IMAGE_RETRIEVE_PWD: ${{ secrets.TF_VAR_IMAGE_RETRIEVE_PWD }}
+  TF_VAR_IMAGE_RETRIEVE_SERVER: ${{ vars.TF_VAR_IMAGE_RETRIEVE_SERVER }}
+  SLS_ENC_KEY: ${{ secrets.SLS_ENC_KEY_MK }}
+  SLS_GITENT_TK: ${{ secrets.SLS_GITENT_TK }}
+  SLS_GITHUB_TK: ${{ secrets.SLS_GITHUB_TK }}
+  ALLEN_DB_HOST: ${{ vars.ALLEN_DB_HOST }}
+  ALLEN_DB_PORT: ${{ vars.ALLEN_DB_PORT }}
+  ALLEN_DB_USR: ${{ secrets.ALLEN_DB_USR }}
+  ALLEN_DB_PWD: ${{ secrets.ALLEN_DB_PWD }}
+  ALLEN_DB_DBNAME: ${{ vars.ALLEN_DB_DBNAME }}
+  ALLEN_DB_TABLE: ${{ vars.ALLEN_DB_TABLE }}
+  DOCKER_USERNAME: ${{ secrets.TF_VAR_IMAGE_RETRIEVE_USERNAME }}
+  DOCKER_PWD: ${{ secrets.TF_VAR_IMAGE_RETRIEVE_PWD }}
+  BUILD_IMAGE_VER: ${{ inputs.version }}
+  CTX_USERNAME: ${{ secrets.CTX_USERNAME }}
+  CTX_PWD: ${{ secrets.CTX_PWD }}
+  GIT_ACCESS_TOKEN_USR: ${{ secrets.GIT_ACCESS_TOKEN_USR }}
+  GIT_ACCESS_TOKEN_PWD: ${{ secrets.GIT_ACCESS_TOKEN_PWD }}
+  ## mns agent related, depracated in pull mode
+  TF_VAR_MNS_URL_PUBLIC: ${{ vars.SLS_MNS_URL }}
+  ALICLOUD_ACCESS_KEY: none
+  ALICLOUD_SECRET_KEY: none
+  ## deprecated env
+  REPO_ORG_NAME: ingka-group-digital
+  REPO_ORG_URL: https://github.com/ingka-group-digital/serverless-hosted-runner
+  TF_VAR_RUNNER_TOKEN: none
+
+jobs:
+  build:
+    runs-on: 
+      labels: [serverless-hosted-runner, cpu-2.0, memory-4.0]
+    steps:      
+    - name: Checkout Repo
+      uses: actions/checkout@v4
+      with:
+        persist-credentials: false 
+    - name: Login Artifactory
+      uses: docker/login-action@0d4c9c5ea7693da7b068278f7b52bda2a190a446 #v3.2.0
+      with:
+        registry: ${{ env.TF_VAR_IMAGE_RETRIEVE_SERVER }}
+        username: ${{ env.TF_VAR_IMAGE_RETRIEVE_USERNAME }}
+        password: ${{ env.TF_VAR_IMAGE_RETRIEVE_PWD }}
+    - name: Setup docker
+      uses: docker/setup-buildx-action@4fd812986e6c8c2a69e18311145f9371337f27d4 #v3.4.0
+      with:
+        driver: docker
+        platforms: linux/amd64
+    - name: Install Dependency
+      run: |
+        sudo apt-get update; sudo apt-get -y install make
+    - name: Build & Push Image
+      run: |
+        make image

@@ -1,0 +1,14 @@
+*/.terraform.*
+env.sh
+build.sh
+build.local.sh
+.vscode/launch.json
+*/terraform.tfstate*
+*.DS_Store*
+src/dispatcher/create_runner_ori.sh
+*/.terraform
+template/dockerd/serverless-runner-docerd-secrets.pem
+src/dispatcher/create_runner_pre_refactor.sh
+dispatcher/*/.*
+ingka-ccoe-gcptaskforce-dev*.json
+dispatcher/gcp/.terraform/modules/modules.json

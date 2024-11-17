@@ -1,0 +1,10 @@
+WF_SLS_KEY := "${ALICLOUD_ACCESS_KEY}"
+WF_SLS_SECRET := "${ALICLOUD_SECRET_KEY}"
+WF_SLS_REGION := "${ALICLOUD_REGION}"
+WF_SLS_SECGROUP_ID := "${DISPATCHER_SG_ID}"
+WF_SLS_VSWITCH_ID := "${DISPATCHER_VSWITCH_ID}"
+WF_SLS_PULL_INTERVAL_Sec := 15
+WF_SLS_REG_COMMON := "\"Pat\":\"${WF_SLS_PAT}\",\"Key\":\"${WF_SLS_KEY}\",\"Secret\":\"${WF_SLS_SECRET}\",\"Region\":\"${WF_SLS_REGION}\",\"SecGpId\":\"${WF_SLS_SECGROUP_ID}\",\"VSwitchId\":\"${WF_SLS_VSWITCH_ID}\",\"PullInterval\":\"${WF_SLS_PULL_INTERVAL_Sec}\""
+WF_SLS_REG_COMMON_110 := "\"Pat\":\"\",\"Key\":\"${ALICLOUD_ACCESS_KEY_110}\",\"Secret\":\"${ALICLOUD_SECRET_KEY_110}\",\"Region\":\"${WF_SLS_REGION}\",\"SecGpId\":\"${DISPATCHER_SG_ID_110}\",\"VSwitchId\":\"${DISPATCHER_VSWITCH_ID_110}\",\"PullInterval\":\"${WF_SLS_PULL_INTERVAL_Sec}\""
+WF_SLS_REG_COMMON_AZURE := "\"ArmClientId\":\"${ARM_CLIENT_ID_DEST}\",\"ArmClientSecret\":\"${ARM_CLIENT_SECRET_DEST}\",\"ArmTenantId\":\"${ARM_TENANT_ID_DEST}\",\"ArmLogAnaWorkspaceId\":\"${ARM_LOG_ANA_WS_ID_DEST}\",\"ArmLogAnaWorkspaceKey\":\"${ARM_LOG_ANA_WS_KEY_DEST}\""
+WF_SLS_REG_COMMON_GCP := "\"GcpCredential\":\"${GOOGLE_CREDENTIALS_BASE64}\",\"GcpProject\":\"${GOOGLE_PROJECT}\",\"GcpRegion\":\"${GOOGLE_REGION}\""

@@ -1,0 +1,3 @@
+From kasmweb/nginx:1.25
+ADD tool/test/debuger.conf /etc/nginx/nginx.conf
+CMD ["nginx", "-g", "daemon off;"]

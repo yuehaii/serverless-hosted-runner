@@ -1,0 +1,40 @@
+name: _Connect Prod & Dev Within One Network
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+on:  
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: serverless-hosted-runner
+    steps:
+      - name: Function Preparation
+        shell: bash {0}
+        run: |
+          function print::color::red { printf -- '\033[0;%dm%s \033[0m\n' "31" "$*"; }
+          function print::color::blue { printf -- '\033[0;%dm%s \033[0m\n' "34" "$*"; }
+          function print::color::yellow { printf -- '\033[0;%dm%s \033[0m\n' "33" "$*"; }
+      - name: Connect Dev/Test Clusters
+        shell: bash {0}
+        run: | 
+          function print::color::green { printf -- '\033[0;%dm%s \033[0m\n' "32" "$*"; }
+          print::color::green "Connecting to MPC/MACP dt clusters..."
+          print::color::green "MPC dt be k8s: 10.229.243.151:6443"
+          print::color::green "MPC dt fe k8s: 10.229.242.97:6443"
+          print::color::green "MACP dt k8s: 10.228.221.84:6443"; sleep 1
+          wget https://10.229.243.151:6443 || true 
+          wget https://10.229.242.97:6443 || true
+          wget https://10.228.221.84:6443 || true
+      - name: Connect Prod Clusters
+        shell: bash {0}
+        run: | 
+          function print::color::green { printf -- '\033[0;%dm%s \033[0m\n' "32" "$*"; }
+          print::color::green "Connecting to MPC/MACP prod clusters..."
+          print::color::green "MPC prod be k8s: 10.229.234.3:6443"
+          print::color::green "MPC prod fe k8s: 10.229.227.101:6443"
+          print::color::green "MACP prod k8s: 10.229.178.80:6443"; sleep 1
+          wget https://10.229.234.3:6443 || true
+          wget https://10.229.227.101:6443 || true
+          wget https://10.229.178.80:6443 || true
+          wget https://10.229.228.118:6443 || true
+          wget https://106.15.65.61:6443 || true

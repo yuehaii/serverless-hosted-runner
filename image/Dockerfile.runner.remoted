@@ -1,0 +1,128 @@
+FROM artifactory.cloud.ingka-system.cn/ccoecn-docker-virtual/golang:1.21.3 As builder
+
+WORKDIR /go/src/app
+
+ARG GO_ARCH
+ENV GO_ARCH $GO_ARCH
+COPY src ./src
+RUN cd ./src; go mod download; \
+    GOOS=linux CGO_ENABLED=0 GOARCH=amd64 go build -o /go/src/app/bin/runner ./runner/
+
+FROM artifactory.cloud.ingka-system.cn/ccoecn-docker-virtual/ubuntu:22.04  
+
+ARG SHR_C_T
+ARG RUNNER_TOKEN
+ARG MNS_URL
+ARG ACCESS_KEY
+ARG SECRET_KEY
+ARG REGION  
+ARG RUNNER_PLATFORM 
+ARG IMAGE_RETRIEVE_USERNAME
+ARG IMAGE_RETRIEVE_PWD 
+ARG IMAGE_RETRIEVE_SERVER
+ARG SLS_ENC_KEY
+# docker paras
+ARG CHANNEL=stable
+ARG DOCKER_VERSION=24.0.7
+ARG DOCKER_COMPOSE_VERSION=v2.23.0
+ARG DUMB_INIT_VERSION=1.2.5
+ARG RUNNER_USER_UID=1001
+ARG DOCKER_GROUP_GID=121
+ENV DEBIAN_FRONTEND=noninteractive
+
+ENV RUNNER_PLATFORM $RUNNER_PLATFORM
+ENV TF_VAR_RUNNER_TOKEN $RUNNER_TOKEN 
+ENV TF_VAR_MNS_URL $MNS_URL
+ENV ALICLOUD_ACCESS_KEY $ACCESS_KEY
+ENV ALICLOUD_SECRET_KEY $SECRET_KEY
+ENV ALICLOUD_REGION $REGION 
+ENV TF_VAR_IMAGE_RETRIEVE_USERNAME $IMAGE_RETRIEVE_USERNAME
+ENV TF_VAR_IMAGE_RETRIEVE_PWD $IMAGE_RETRIEVE_PWD
+ENV TF_VAR_IMAGE_RETRIEVE_SERVER $IMAGE_RETRIEVE_SERVER
+ENV RUNNER_ALLOW_RUNASROOT "1"
+ENV SLS_ENC_KEY $SLS_ENC_KEY
+
+RUN apt-get update -y \
+    && apt-get install -y software-properties-common \
+    && add-apt-repository -y ppa:git-core/ppa \
+    && apt-get update -y \
+    && apt-get install -y --no-install-recommends \
+        curl \
+        ca-certificates \
+        git \
+        iproute2 \
+        iptables \
+        jq \
+        sudo \
+        uidmap \ 
+        libc6 \
+        wget \
+        pbzip2 \
+        fuse-overlayfs \
+        openssh-client \
+        sshfs \
+        zip \
+        vim \
+        unzip && \
+    rm -rf /var/lib/apt/lists/* && \
+    apt-get clean
+RUN curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | bash && \
+    apt-get install -y --no-install-recommends git-lfs
+
+RUN adduser --disabled-password --gecos "" --uid $RUNNER_USER_UID runner \
+    && groupadd docker --gid $DOCKER_GROUP_GID \
+    && usermod -aG sudo runner \
+    && usermod -aG docker runner \
+    && echo "%sudo   ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers \
+    && echo "Defaults env_keep += \"DEBIAN_FRONTEND\"" >> /etc/sudoers \
+    && echo "root	ALL=(ALL:ALL) ALL" >> /etc/sudoers
+ENV RUNNER_TOOL_CACHE=/opt/hostedtoolcache
+RUN mkdir /opt/hostedtoolcache \
+    && chgrp docker /opt/hostedtoolcache \
+    && chmod g+rwx /opt/hostedtoolcache
+
+# docker binarys: containerd, docker, dockerd, runc
+RUN set -vx; \ 
+    export ARCH=$(echo ${RUNNER_PLATFORM}) \
+    && if [ "$RUNNER_PLATFORM" = "arm64" ]; then export ARCH=aarch64 ; fi \
+    && if [ "$RUNNER_PLATFORM" = "amd64" ] || [ "$RUNNER_PLATFORM" = "linux-x64" ]; then export ARCH=x86_64 ; fi \
+    && curl -fLo docker.tgz https://download.docker.com/linux/static/${CHANNEL}/${ARCH}/docker-${DOCKER_VERSION}.tgz \
+    && tar zxvf docker.tgz \
+    && install -o root -g root -m 755 docker/* /usr/bin/ \
+    && rm -rf docker docker.tgz
+
+## docker-compose
+RUN export ARCH=$(echo ${RUNNER_PLATFORM}) \
+    && if [ "$RUNNER_PLATFORM" = "arm64" ]; then export ARCH=aarch64 ; fi \
+    && if [ "$RUNNER_PLATFORM" = "amd64" ] || [ "$RUNNER_PLATFORM" = "linux-x64" ]; then export ARCH=x86_64 ; fi \
+    && mkdir -p /usr/libexec/docker/cli-plugins \
+    && curl -fLo /usr/libexec/docker/cli-plugins/docker-compose https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-linux-${ARCH} \
+    && chmod +x /usr/libexec/docker/cli-plugins/docker-compose \
+    && ln -s /usr/libexec/docker/cli-plugins/docker-compose /usr/bin/docker-compose \
+    && which docker-compose \
+    && docker compose version
+
+
+WORKDIR /go/bin
+
+COPY --from=builder /go/src/app/bin/runner ./runner
+COPY src/runner/*.sh ./
+
+RUN GH_RUNNER_VERSION=${GH_RUNNER_VERSION:-$(curl --silent "https://api.github.com/repos/actions/runner/releases/latest" | grep tag_name | sed -E 's/.*"v([^"]+)".*/\1/')} \
+    && curl -L -O https://github.com/actions/runner/releases/download/v${GH_RUNNER_VERSION}/actions-runner-${RUNNER_PLATFORM}-${GH_RUNNER_VERSION}.tar.gz \
+    && tar -zxf actions-runner-${RUNNER_PLATFORM}-${GH_RUNNER_VERSION}.tar.gz \
+    && rm -f actions-runner-${RUNNER_PLATFORM}-${GH_RUNNER_VERSION}.tar.gz \
+    && ./bin/installdependencies.sh \ 
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean; chmod +x ./init.sh; chmod +x ./sacrify.sh; echo 200 > /tmp/healthy; \
+    mkdir -p ~/.ssh
+
+# #### daemond ssh remote. this can be disabled after ali ECI finish dind support 
+ENV DOCKER_HOST "ssh://root@serverless.dockerd.com"
+COPY template/dockerd/config /root/.ssh/config
+COPY template/dockerd/serverless-runner-docerd-secrets.pem /root/.ssh/serverless-runner-docerd-secrets.pem
+RUN sudo chmod 600 /root/.ssh/serverless-runner-docerd-secrets.pem
+RUN ssh-keyscan serverless.dockerd.com >> /root/.ssh/known_hosts
+## RUN sysctl -w net.ipv4.ip_forward=1
+
+USER root

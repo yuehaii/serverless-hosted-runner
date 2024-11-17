@@ -1,0 +1,88 @@
+name: _(Deprecated & Replaced with Allen portal) Runner Registration
+env:
+  SLS_ENC_KEY: ${{ secrets.SLS_ENC_KEY }} # for input pat, secret encryption
+  SLS_ALI_KEY: ${{ secrets.SLS_ALI_KEY }} # for tf dispatcher, mns creation. set in CI wf env
+  SLS_ALI_SEC: ${{ secrets.SLS_ALI_SEC }} # for tf dispatcher, mns creation. set in CI wf env
+  SLS_MNS_URL: ${{ vars.SLS_MNS_URL }}    # dispatcher mns url
+  SLS_TENANT_KEY: "${{ inputs.tenantkey }}"    # use to create runner in target tenant 
+  SLS_TENANT_REGION: "${{ inputs.tenantregion }}" # use to create runner in this region 
+  SLS_RUNNER_TYPE: "${{ inputs.type }}" 
+  SLS_RUNNER_NAME: "${{ inputs.name }}"
+  SLS_RUNNER_URL: "${{ inputs.url }}"
+  SLS_RUNNER_CONFIG: "${{ inputs.config }}" 
+  SLS_SG_ID: "${{ inputs.sercuritygroup_id }}" 
+  SLS_VSWITCH_ID: "${{ inputs.vswitch_id }}" 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+on:  
+  workflow_dispatch: 
+    inputs:
+      type:
+        type: choice
+        description: 'Runner type'
+        required: true
+        default: 'Repo'
+        options: 
+        - Repo
+        - Org
+        - Pool
+      tenantkey:
+        type: string
+        description: 'Ali tenant RAM access key'
+        required: true 
+      tenantsecret:
+        type: string
+        description: 'Ali tenant RAM access secret'
+        required: true 
+      tenantregion:
+        type: string
+        description: 'Runner region'
+        required: true 
+        default: "cn-shanghai"
+      name:
+        type: string
+        description: 'Organization or repository name'
+        required: true 
+      url:
+        type: string
+        description: 'Organization or repository url'
+        required: true 
+      pat:
+        type: string
+        description: 'Organization or repository PAT token'
+        required: false 
+        default: ""
+      sercuritygroup_id:
+        type: string
+        description: 'Security group id'
+        required: true 
+      vswitch_id:
+        type: string
+        description: 'VSwitch id'
+        required: true 
+      config:
+        type: string
+        description: 'Runner Json configurations.'
+        required: true 
+        default: '{"size":"1","cpu":"1.0","memory":"2.0"}'
+jobs:
+  build:
+    runs-on: serverless-hosted-runner
+    # runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: 1.21.1  
+          cache-dependency-path: ./src/*.sum
+      - name: build & config app
+        run: |
+          export SLS_TENANT_SECRET=$(cat $GITHUB_EVENT_PATH | jq -r '.inputs.tenantsecret') 
+          echo "::add-mask::$SLS_TENANT_SECRET"
+          export SLS_RUNNER_PAT=$(cat $GITHUB_EVENT_PATH | jq -r '.inputs.pat') 
+          echo "::add-mask::$SLS_RUNNER_PAT" 
+          mkdir ~/app; cd ./src; go mod download 
+          go build -o ~/app/poolagent ./pool/main.go  
+          ~/app/poolagent

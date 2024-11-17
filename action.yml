@@ -1,0 +1,103 @@
+---
+name: Remote Dockerd Adapter & CICD
+author: 'Hai Yue'
+description: Adapt dind limitation with remote dockerd and CICD actions
+branding:
+  icon: align-justify
+  color: green
+inputs:
+  op:
+    description: 'operation of the adapter or cicd'
+    required: true
+    default: 'adapt' 
+  reg:
+    description: 'cicd registration alias'
+    required: false
+    default: 'test' 
+runs:
+  using: composite
+  steps:
+    - id: dind-adapter-cleaner
+      name: adapt dind cleaner
+      shell: bash
+      if: inputs.op == 'clean' 
+      continue-on-error: true
+      run: | 
+        echo "clean dind adapter data"
+        ssh -o ConnectTimeout=30 -l root -- serverless.dockerd.com rm -rf /go
+    - name: adapt dind limitation with remote dockerd in eci
+      id: dind-adapter-serverless-runner
+      shell: bash
+      if: inputs.op == 'adapt' 
+      continue-on-error: true 
+      run: |
+        echo "adapt dind limitation"
+        ssh -o ConnectTimeout=30 -l root -- serverless.dockerd.com mkdir -p /go/bin/_work/_actions/ /go/bin/_work/_temp/_github_home /go/bin/_work/_temp/_github_workflow /go/bin/_work/_temp/_runner_file_commands /go/bin/_work/${{ github.event.repository.name }}/${{ github.event.repository.name }}
+        scp -r /go/bin/_work/_actions/* root@serverless.dockerd.com:/go/bin/_work/_actions || true
+        scp -r /go/bin/_work/_temp/* root@serverless.dockerd.com:/go/bin/_work/_temp || true
+        scp -r /go/bin/_work/_temp/_github_workflow/* root@serverless.dockerd.com:/go/bin/_work/_temp/_github_workflow
+        scp -r /go/bin/_work/_temp/_runner_file_commands/* root@serverless.dockerd.com:/go/bin/_work/_temp/_runner_file_commands
+        scp -r /go/bin/_work/${{ github.event.repository.name }}/${{ github.event.repository.name }}/* root@serverless.dockerd.com:/go/bin/_work/${{ github.event.repository.name }}/${{ github.event.repository.name }}
+    - name: adapt dind limitation with debug info
+      id: dind-adapter-serverless-runner-debug
+      shell: bash
+      if: inputs.op == 'adapt_debug' 
+      continue-on-error: true
+      run: |
+        echo "ls -al /go/bin/"; ls -al /go/bin/ 
+        echo "ls -al /go/bin/_work/"; ls -al /go/bin/_work/
+        echo "ls -al /go/bin/_work/_actions"; ls -al /go/bin/_work/_actions || true
+        echo "ls -al /go/bin/_work/_temp/"; ls -al /go/bin/_work/_temp/
+        echo "ls -al /go/bin/_work/_temp/_github_home/"; ls -al /go/bin/_work/_temp/_github_home/ || true
+        echo "ls -al /go/bin/_work/_temp/_github_workflow/"; ls -al /go/bin/_work/_temp/_github_workflow/
+        echo "ls -al /go/bin/_work/_temp/_runner_file_commands/"; ls -al /go/bin/_work/_temp/_runner_file_commands/
+        echo "ls -al /go/bin/_work/${{ github.event.repository.name }}/${{ github.event.repository.name }}/"; ls -al /go/bin/_work/${{ github.event.repository.name }}/${{ github.event.repository.name }}/
+        echo "adapt dind limitation"
+        ssh -o ConnectTimeout=30 -l root -- serverless.dockerd.com mkdir -p /go/bin/_work/_actions/ /go/bin/_work/_temp/_github_home /go/bin/_work/_temp/_github_workflow /go/bin/_work/_temp/_runner_file_commands /go/bin/_work/${{ github.event.repository.name }}/${{ github.event.repository.name }}
+        scp -r /go/bin/_work/_actions/* root@serverless.dockerd.com:/go/bin/_work/_actions || true
+        scp -r /go/bin/_work/_temp/* root@serverless.dockerd.com:/go/bin/_work/_temp || true
+        scp -r /go/bin/_work/_temp/_github_workflow/* root@serverless.dockerd.com:/go/bin/_work/_temp/_github_workflow
+        scp -r /go/bin/_work/_temp/_runner_file_commands/* root@serverless.dockerd.com:/go/bin/_work/_temp/_runner_file_commands
+        scp -r /go/bin/_work/${{ github.event.repository.name }}/${{ github.event.repository.name }}/* root@serverless.dockerd.com:/go/bin/_work/${{ github.event.repository.name }}/${{ github.event.repository.name }}
+        echo "serverless.dockerd.com ls -al /go/bin/_work/_temp/_github_home" 
+        ssh -o ConnectTimeout=30 -l root -- serverless.dockerd.com ls -al /go/bin/_work/_temp/_github_home
+        echo "serverless.dockerd.com ls -al /go/bin/_work/_temp/_github_workflow"
+        ssh -o ConnectTimeout=30 -l root -- serverless.dockerd.com ls -al /go/bin/_work/_temp/_github_workflow
+        echo "serverless.dockerd.com ls -al /go/bin/_work/_temp/_runner_file_commands"
+        ssh -o ConnectTimeout=30 -l root -- serverless.dockerd.com ls -al /go/bin/_work/_temp/_runner_file_commands
+        echo "serverless.dockerd.com ls -al /go/bin/_work/${{ github.event.repository.name }}/${{ github.event.repository.name }}"
+        ssh -o ConnectTimeout=30 -l root -- serverless.dockerd.com ls -al /go/bin/_work/${{ github.event.repository.name }}/${{ github.event.repository.name }}
+        echo "serverless.dockerd.com ls -al /go/bin/_work/_actions"
+        ssh -o ConnectTimeout=30 -l root -- serverless.dockerd.com ls -al /go/bin/_work/_actions
+    - name: lazy install
+      id: register-ci-lazy-install
+      shell: bash
+      if: inputs.op == 'lazy_install'
+      continue-on-error: false
+      run: |
+        make lazy_install ralias="${{ inputs.reg }}"
+    - name: allen install
+      id: register-ci-allen-install
+      shell: bash
+      if: inputs.op == 'allen_install'
+      continue-on-error: false
+      run: |
+        make install ralias="${{ inputs.reg }}"
+    - name: mix install
+      id: register-ci-mix-install
+      shell: bash
+      if: inputs.op == 'mix_install'
+      continue-on-error: false
+      run: |
+        make mix_install ralias="${{ inputs.reg }}"
+    - name: install dependency
+      id: ci-install-dependency
+      shell: bash
+      if: inputs.op == 'install_dependency'
+      continue-on-error: false
+      run: |
+        sudo apt-get update; sudo apt-get -y install make    
+        export TF_VER=1.6.5 TF_PLATFORM=amd64
+        wget https://releases.hashicorp.com/terraform/${TF_VER}/terraform_${TF_VER}_linux_${TF_PLATFORM}.zip
+        unzip terraform_${TF_VER}_linux_${TF_PLATFORM}.zip && cp ./terraform /usr/local/bin/ 
+        rm ./terraform; rm ./terraform_${TF_VER}_linux_${TF_PLATFORM}.zip

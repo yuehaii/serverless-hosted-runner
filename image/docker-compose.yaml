@@ -1,0 +1,13 @@
+---
+version: "3.9" 
+services: 
+  dispatcher:
+    container_name: "dispatcher"
+    image: "localhost/ccoecn-docker-virtual/serverless-hosted-dispatcher:0.0.2" 
+    ports:
+      - "61201:61201"
+    command: /go/bin/dispatcher -v 1.0.3 -r [{Cpu="2.0",Memory="4.0"},]
+  runner:
+    container_name: "runner"
+    image: "localhost/ccoecn-docker-virtual/serverless-hosted-runner-eci:0.0.2" 
+    command: /go/bin/runner -t "runner" -i "7138227917" -k linux-x64 -n "ccoecn-postgres-br-hai" -a "queued" -p "yuehaii" -o "none"

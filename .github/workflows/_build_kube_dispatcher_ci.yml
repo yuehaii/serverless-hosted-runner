@@ -1,0 +1,40 @@
+name: _Build K8S Dispatcher CI
+on:
+  workflow_dispatch:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  DOCKER_REGISTRY: "artifactory.cloud.ingka-system.cn"
+  NAMESPACE: "ccoecn-docker-virtual"
+  DOCKERFILE: "Dockerfile"
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:      
+    - name: Checkout Repo
+      uses: actions/checkout@v4
+    - name: Login Artifactory
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ vars.ARTIFACTORY_URL }}
+        username: ${{ secrets.ARTIFACTORY_USER }}
+        password: ${{ secrets.ARTIFACTORY_PWD }}
+    - name: Setup docker
+      uses: docker/setup-buildx-action@v3
+      with:
+        driver: docker
+        platforms: linux/amd64
+    - name: Tool preparation
+      run: |
+        sudo apt-get update
+        sudo apt-get -y install make
+        { sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64; \
+        sudo chmod a+x /usr/local/bin/yq; sudo apt-get install jq > /dev/null; } 
+        [[ ! -d ./.kube ]] && { mkdir -p ./.kube; echo ${{ secrets.SLS_KUBE_CONFIG }} | yq -p j . -o y > ./.kube/config; } 
+        [[ ! -f /usr/local/bin/kubectl ]] && { curl -LO https://dl.k8s.io/release/v1.30.0/bin/linux/amd64/kubectl; \
+        sudo install -m 0755 kubectl /usr/local/bin/kubectl; rm ./kubectl; }        
+    - name: Build & Install
+      run: |
+        make image
+        make lazy_install_kube

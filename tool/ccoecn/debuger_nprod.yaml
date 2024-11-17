@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: debugger
+spec:
+  selector:
+    matchLabels:
+      name: debugger
+  template:
+    metadata: 
+      labels:
+        name: debugger
+    spec:
+      containers:
+      - image: artifactory.cloud.ingka-system.cn/ccoecn-docker-virtual/allen-db-debugger-nprod:latest
+        imagePullPolicy: Always
+        name: debugger
+        ports:
+        - containerPort: 5432
+          name: tcp
+          protocol: TCP
+        securityContext:
+          privileged: true
+      imagePullSecrets:
+      - name: image-pull-secret
