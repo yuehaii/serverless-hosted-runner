@@ -97,6 +97,9 @@ For Azure cloud, please follow below configuration.
 1. Please add the [arm environment registration](https://github.com/ingka-group-digital/serverless-hosted-runner/blob/feat-multi-cloud/Registration.mk#L9C31-L9C42) and [aci registration](https://github.com/ingka-group-digital/serverless-hosted-runner/blob/feat-multi-cloud/registration/Registration_test.mk#L19).
 2. Running the registration workflow and select "cloud provider" as "azure".
 3. Please notice that DinD need privilege which only available in "Confidential" tier. This tier is not available in China Azure Cloud. Please use global Azure Cloud instead. 
+### GCP cloud configuration. 
+1. Please update the [gcp credential,project,region registration](https://github.com/ingka-group-digital/serverless-hosted-runner/blob/feat-gcp-cloud/Registration.mk#L10) and [it](https://github.com/ingka-group-digital/serverless-hosted-runner/blob/feat-gcp-cloud/registration/Registration_test.mk#L21C25-L21C46) as part of registration.
+2. Running the registration workflow and select "cloud provider" as "gcp".
 
 ## Known issue
 CI building may raise "[signal kill](https://github.com/beego/wetalk/issues/32)" error if the runner memory is not enough. You can add label as below to increase the memory size. 
