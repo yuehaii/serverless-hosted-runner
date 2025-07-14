@@ -9,13 +9,13 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/alecthomas/kingpin/v2"
+	kingpin "github.com/alecthomas/kingpin/v2"
 	"github.com/ingka-group-digital/app-monitor-agent/logrus"
 )
 
 var (
-	listenAddress = kingpin.Flag("addr", "listen on port").Default("61201").String()
-	runnerPath    = kingpin.Flag("path", "runner path").Default("/runner").String()
+	listen_addr   = kingpin.Flag("addr", "listen on port").Default("61201").String()
+	runner_path   = kingpin.Flag("path", "runner path").Default("/runner").String()
 	image_ver     = kingpin.Flag("image_ver", "image version.").Short('v').String()
 	ctx_log_level = kingpin.Flag("ctx_log_level", "context log level.").Short('m').String()
 	lazy_regs     = kingpin.Flag("lazy_regs", "lazy install registrations.").Short('r').String()
@@ -23,19 +23,20 @@ var (
 	allen_regs    = kingpin.Flag("allen_regs", "allen registration enable.").Default("none").Short('a').String()
 	pool_mode     = kingpin.Flag("pool_enable", "pool mode enabled.").Default("false").Short('p').Bool()
 	cloud_pr      = kingpin.Flag("cloud", "cloud provider").Default("ali").Short('c').String()
+	tf_ctl        = kingpin.Flag("tfctl", "terraform controller").Default("go").Short('t').String()
 )
 
 func main() {
 	kingpin.HelpFlag.Short('h')
 	kingpin.Parse()
 	dispatch := EciDispatcherConstruct(*image_ver, *lazy_regs, *allen_regs)
-	http.HandleFunc(*runnerPath, dispatch.HandleEvents)
-	logrus.Infof("Listening on: %s", *listenAddress)
+	dispatch.Init()
+	http.HandleFunc(*runner_path, dispatch.HandleEvents)
+	logrus.Infof("Listening on: %s", *listen_addr)
 	server := &http.Server{
-		Addr:         "0.0.0.0:" + *listenAddress,
+		Addr:         "0.0.0.0:" + *listen_addr,
 		ReadTimeout:  600 * time.Second,
 		WriteTimeout: 600 * time.Second,
-		// MaxHeaderBytes: 1 << 20,
 	}
 	go dispatch.Refresh()
 	go func() {

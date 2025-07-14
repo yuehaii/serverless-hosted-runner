@@ -23,14 +23,46 @@ on:
       - Makefile
   workflow_dispatch: 
     inputs:
+      provider:
+        description: 'cloud provider'
+        default: 'ali'
+        type: choice
+        options:
+        - ali
+        - azure 
+        - gcp 
+        required: false 
       version:
         type: string
         description: 'image version'
         required: false 
+      runner_file:
+        description: 'runner dockerfile sufix'
+        default: 'runner'
+        type: choice
+        options:
+        - runner
+        - ei
+        required: false 
+      runner_file_version:
+        description: 'runner file version, leave it as default'
+        default: '14'
+        type: choice
+        options:
+        - '10'
+        - '12'
+        - '14'
+        - '15'
+        required: false 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+run-name: ${{ github.workflow }} - ${{ github.event_name }} - ${{ inputs.provider }} - ${{ inputs.version }} - ${{ inputs.runner_file }} - ${{ inputs.runner_file_version }}
 env:
+  SLS_CLOUD_PR: ${{ inputs.provider }}
+  SLS_REPO_IMAGE: ${{ inputs.runner_file }}
+  SLS_REPO_IMAGE_VERSION: ${{ inputs.runner_file_version }}
+  SLS_TF_CTL: ${{ vars.SLS_TF_CTL_BUILD }}
   ALICLOUD_REGION: ${{ vars.ALICLOUD_REGION }}
   TF_VAR_IMAGE_RETRIEVE_USERNAME: ${{ secrets.TF_VAR_IMAGE_RETRIEVE_USERNAME }}
   TF_VAR_IMAGE_RETRIEVE_PWD: ${{ secrets.TF_VAR_IMAGE_RETRIEVE_PWD }}
@@ -47,10 +79,13 @@ env:
   DOCKER_USERNAME: ${{ secrets.TF_VAR_IMAGE_RETRIEVE_USERNAME }}
   DOCKER_PWD: ${{ secrets.TF_VAR_IMAGE_RETRIEVE_PWD }}
   BUILD_IMAGE_VER: ${{ inputs.version }}
+  BUILD_IMAGE_RUN_NUM_VER: ${{ github.ref_name }}-${{ github.run_number }}
   CTX_USERNAME: ${{ secrets.CTX_USERNAME }}
   CTX_PWD: ${{ secrets.CTX_PWD }}
   GIT_ACCESS_TOKEN_USR: ${{ secrets.GIT_ACCESS_TOKEN_USR }}
   GIT_ACCESS_TOKEN_PWD: ${{ secrets.GIT_ACCESS_TOKEN_PWD }}
+  DISPACHER_CA_CERT: ${{ secrets.DISPACHER_CA_CERT }}
+  DISPACHER_CA_KEY: ${{ secrets.DISPACHER_CA_KEY }}
   ## mns agent related, depracated in pull mode
   TF_VAR_MNS_URL_PUBLIC: ${{ vars.SLS_MNS_URL }}
   ALICLOUD_ACCESS_KEY: none
@@ -59,6 +94,11 @@ env:
   REPO_ORG_NAME: ingka-group-digital
   REPO_ORG_URL: https://github.com/ingka-group-digital/serverless-hosted-runner
   TF_VAR_RUNNER_TOKEN: none
+  ## gcr
+  GOOGLE_PROJECT: ${{ vars.GOOGLE_PROJECT }}
+  GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+  GOOGLE_CREDENTIALS_BASE64: ${{ secrets.GOOGLE_CREDENTIALS_BASE64 }}
+  GOOGLE_REGION: ${{ vars.GOOGLE_REGION }}
 
 jobs:
   build:

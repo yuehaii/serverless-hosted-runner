@@ -8,8 +8,6 @@ gcp_dispatcher = {
     startup_cmd         = "./dispatcher"
     working_dir         = "/go/bin/"
     protocol            = "http"
-    cpu                 = "1.0" 
-    memory              = "2Gi"
     bucket              = "tf-state-sls-dispacher" 
     prefix              = "terraform/state"
 }

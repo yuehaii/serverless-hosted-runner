@@ -45,7 +45,7 @@ func main() {
 		os.Getenv("SLS_RUNNER_URL"), os.Getenv("SLS_RUNNER_SIZE"), os.Getenv("SLS_TENANT_KEY"), os.Getenv("SLS_TENANT_SECRET"),
 		os.Getenv("SLS_TENANT_REGION"), os.Getenv("SLS_SG_ID"), os.Getenv("SLS_VSWITCH_ID"), os.Getenv("SLS_RUNNER_CPU"),
 		os.Getenv("SLS_RUNNER_MEMORY"), "", "", os.Getenv("SLS_RUNNER_LABELS"), "", "",
-		"", "", "", "", "", "", "", "", "", "", "", "", ""}
+		"", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""}
 	out, err := json.Marshal(msg)
 	if err != nil {
 		logrus.Errorln("convert struct to byte fail,", err)

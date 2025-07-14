@@ -1,0 +1,38 @@
+name: Lint
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+env:
+  GIT_ACCESS_TOKEN_USR: ${{ secrets.GIT_ACCESS_TOKEN_USR }}
+  GIT_ACCESS_TOKEN_PWD: ${{ secrets.GIT_ACCESS_TOKEN_PWD }}
+jobs:
+  run-lint:
+    runs-on: [serverless-hosted-runner, cpu-2.0, memory-4.0]
+    permissions:
+      contents: read
+      packages: read
+      statuses: write
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.17
+      # - name: Super-linter
+      #   uses: super-linter/super-linter/slim@v7.4.0 # x-release-please-version
+      #   env:
+      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #     VALIDATE_GO: true
+      #     DEFAULT_BRANCH: "main"
+      #     VALIDATE_ALL_CODEBASE: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version: stable
+      - name: repo-cred
+        run: |
+          echo "machine github.com login ${GIT_ACCESS_TOKEN_USR} password ${GIT_ACCESS_TOKEN_PWD}">> ~/.netrc; chmod 600 ~/.netrc
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          version: v2.1
+          working-directory: src

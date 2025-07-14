@@ -2,14 +2,17 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	_ "net/http/pprof"
 	"os"
 	"os/exec"
 	agent "serverless-hosted-runner/agent"
 	common "serverless-hosted-runner/common"
+	listener "serverless-hosted-runner/network/grpc"
 	"strconv"
 	"strings"
 	"time"
@@ -55,12 +58,20 @@ type EciRunner struct {
 	sacrify_interval  int64
 	sacrity_time      int64
 	runner_group      string
+	remote_dockerd    bool
+	max_idle          int64
+	sys_ctl           common.ISysCtl
+	retry_times       int
+	retry_backoff     int64
+	pr                string
+	dis_ip            string
+	tk_invalid        int64
 }
 
 func EciRunnerCreator(container_type string, runner_id string, runner_token string,
 	runner_repo_url string, runner_org string, runner_repo_name string,
 	runner_action string, runner_repo_owner string, image_ver string, runner_labels string,
-	runner_group string) Runner {
+	runner_group string, cloud_pr string, dis_ip string) Runner {
 	additional_labels := ""
 	if len(runner_labels) > 0 && runner_labels != "none" {
 		additional_labels = "," + runner_labels
@@ -72,7 +83,7 @@ func EciRunnerCreator(container_type string, runner_id string, runner_token stri
 		"api.github.com", "git.build.ingka.ikea.com", "", "", false, "",
 		"/actions/runners/generate-jitconfig", "-" + os.Getenv("runner"),
 		"/actions/runners/remove-token", "serverless-hosted-runner,eci-runner" + additional_labels,
-		10, 0, runner_group}
+		10, 0, runner_group, false, 300, common.CreateUnixSysCtl(), 3, 20, cloud_pr, dis_ip, 3600}
 }
 
 // TODO: Support Function runner
@@ -80,96 +91,200 @@ func FnRunnerCreator() Runner {
 	return nil
 }
 
-func (runer *EciRunner) Init() {
+func (runner *EciRunner) Init() {
 	common.SetContextLogLevel(*ctx_log_level)
-	runer.runner_init()
+	runner.runnerInit()
 }
 
-func (runer *EciRunner) Configure() {
-	crypto := common.DefaultCryptography(os.Getenv("SLS_ENC_KEY"))
-	_ = runer.remove_runner(runer.home_path, runer.tk)
-	if runer.runner_org != "none" {
-		runer.tk, _ = runer.get_org_registration_token(crypto.DecryptMsg(runer.runner_token))
-		_, _ = runer.config_runner(runer.runner_org, runer.runner_name(), runer.runner_repo_url)
-	} else if runer.runner_repo_name != "" {
-		runer.tk, _ = runer.get_repo_registration_token(crypto.DecryptMsg(runer.runner_token))
-		_, _ = runer.config_runner(runer.runner_repo_name, runer.runner_name(), runer.runner_repo_url)
+func (runner *EciRunner) Configure() {
+	runnerConfig := func() (err error) {
+		_ = runner.removeRunner(runner.home_path, runner.tk, false)
+		if err := runner.refreshTk(); err != nil {
+			logrus.Errorf("%s - fail to gen tk for config, %v", runner.runner_id, err)
+			return err
+		} else {
+			if runner.runner_org != "none" {
+				out, err := runner.configRunner(runner.runner_org, runner.runnerName(), runner.runner_repo_url)
+				if err != nil {
+					logrus.Errorf("%s - fai to config runner, %v, err:%v", runner.runner_id, out, err)
+				}
+				return err
+			} else if runner.runner_repo_name != "" {
+				out, err := runner.configRunner(runner.runner_repo_name, runner.runnerName(), runner.runner_repo_url)
+				if err != nil {
+					logrus.Errorf("%s - fai to config runner, %v, err:%v", runner.runner_id, out, err)
+				}
+				return err
+			}
+		}
+		return errors.New("unknow runner type for config")
+	}
+	times := 0
+	for times < runner.retry_times {
+		if runnerConfig() == nil {
+			break
+		}
+		times += 1
+		time.Sleep(time.Duration(runner.retry_backoff) * time.Second)
+		logrus.Warnf("%s - fail to config runner url: %s, label: %s, retry %v time", runner.runner_id, runner.runner_repo_url, runner.default_labels, times)
 	}
 }
 
-func (runer EciRunner) runner_init() {
+func (runner EciRunner) runnerInit() {
 	logrus.Infof("Init runner...")
-	cmd := exec.Command(runer.home_path + "init.sh")
-	out, err := cmd.Output()
-	logrus.Infof("Init runner cmd output is: %s", out)
-	if err != nil {
-		logrus.Errorf("Init runner error: %s", err)
+	if runner.remote_dockerd {
+		cmd := exec.Command(runner.home_path + "_depsh/init.sh")
+		out, err := cmd.Output()
+		logrus.Infof("Init runner cmd output is: %s", out)
+		if err != nil {
+			logrus.Errorf("%s - Init runner error: %s", runner.runner_id, err)
+		}
+	} else {
+		if runner.pr == "ali" {
+			runner.sys_ctl.DockerStorageDriver("overlay2")
+		}
+		go runner.sys_ctl.StartProcess("dockerd")
+		go runner.sys_ctl.SetResolvers()
 	}
 }
 
-func (runer EciRunner) runner_name() string {
-	if runer.container_type == "pool" {
-		return runer.pool_prefix + "-" + runer.runner_org + runer.pool_sufix
-	} else if runer.container_type == "org" {
-		return runer.runner_org + "-" + runer.runner_id
-	} else if runer.container_type == "repo" {
-		return runer.runner_repo_name + "-" + runer.runner_id
+func (runner EciRunner) runnerName() string {
+	if runner.container_type == "pool" {
+		return runner.pool_prefix + "-" + runner.runner_org + runner.pool_sufix
+	} else if runner.container_type == "org" {
+		return runner.runner_org + "-" + runner.runner_id
+	} else if runner.container_type == "repo" {
+		return runner.runner_repo_name + "-" + runner.runner_id
 	} else {
 		return ""
 	}
 }
 
-func (runer EciRunner) pool_name() string {
-	return runer.pool_prefix + "-" + runer.runner_org
+func (runner EciRunner) poolName() string {
+	return runner.pool_prefix + "-" + runner.runner_org
 }
 
-func (runer EciRunner) config_runner(label string, name string, url string) (string, error) {
-	logrus.Infof("Configuring runner... url %s, name %s, label %s", url, name, label+","+runer.default_labels)
-	cmd := exec.Command(runer.home_path+"config.sh", "--url", url, "--token", runer.tk, "--name", name,
-		"--runnergroup", runer.runner_group,
-		"--labels", label+","+runer.default_labels, "--work", "_work", "--replace",
-		common.Ternary(runer.container_type == "pool", "", "--ephemeral").(string))
-	logrus.Infof("Config runner cmd is: %s", cmd.String())
+func (runner EciRunner) configRunner(label string, name string, url string) (string, error) {
+	logrus.Infof("Configuring runner... url %s, name %s, label %s", url, name, label+","+runner.default_labels)
+	cmd := exec.Command(runner.home_path+"config.sh", "--url", url, "--token", runner.tk, "--name", name,
+		"--runnergroup", runner.runner_group,
+		"--labels", label+","+runner.default_labels, "--work", "_work",
+		common.Ternary(runner.container_type == "pool", "", "--ephemeral").(string))
 	out, err := cmd.Output()
-	logrus.Infof("Config runner cmd output is: %s", string(out))
+	logrus.Infof("Config runner cmd %s, output is: %s", cmd.String(), string(out))
 	if err != nil {
-		logrus.Errorln(string(out), err)
+		logrus.Errorln(runner.runner_id+" - "+string(out), err)
 		return fmt.Sprint(out), err
+	} else if !strings.Contains(string(out), "successful") {
+		msg := "fail to register runner: " + string(out)
+		logrus.Errorln(runner.runner_id + " - " + msg)
+		return fmt.Sprint(out), errors.New(msg)
 	}
 	return fmt.Sprint(out), nil
 }
 
-func (runer *EciRunner) need_sacrifice() {
-	for runer.container_type != "pool" {
-		runcmd := exec.Command(runer.home_path+"sacrify.sh", strconv.FormatInt(runer.sacrity_time, 10))
-		out, err := runcmd.Output()
-		logrus.Infof("need_sacrifice cmd output is: %s, sacrity_time is: %d",
-			string(out), runer.sacrity_time)
+func (runner *EciRunner) refreshTk() (err error) {
+	crypto := common.DefaultCryptography(os.Getenv("SLS_ENC_KEY"))
+	if runner.runner_org != "none" {
+		runner.tk, err = runner.getOrgRegToken(crypto.DecryptMsg(runner.runner_token))
 		if err != nil {
-			logrus.Errorln(string(out), err)
+			logrus.Errorf("%s - fail to generate org access token, %v", runner.runner_id, err)
+			return err
 		}
-		runer.sacrity_time += runer.sacrify_interval
-		time.Sleep(time.Duration(runer.sacrify_interval) * time.Second)
+	} else if runner.runner_repo_name != "" {
+		runner.tk, err = runner.getRepoRegToken(crypto.DecryptMsg(runner.runner_token))
+		if err != nil {
+			logrus.Errorf("%s - fail to generate repo access token, %v", runner.runner_id, err)
+			return err
+		}
 	}
-}
-
-func (runer EciRunner) Start() error {
-	runcmd := exec.Command(runer.home_path + "run.sh")
-	err := runcmd.Start()
-	if err != nil {
-		logrus.Errorf("Unable to start runner: %s", err)
-		return err
-	}
-	go runer.need_sacrifice()
 	return nil
 }
 
-func (runer EciRunner) Info() interface{} {
-	logrus.Infof("Info tk %s", runer.tk)
-	return runer
+func (runner EciRunner) idleDetection(work_log string) {
+	if strings.Contains(strings.ToLower(work_log), "job completed") ||
+		(runner.sacrity_time > runner.max_idle &&
+			!strings.Contains(strings.ToLower(work_log), "job message")) {
+		logrus.Warnf(common.Ternary(strings.Contains(strings.ToLower(work_log), "job completed"),
+			"workflow finished. complete runner.", "sacrify cur_idle: "+strconv.Itoa(int(runner.sacrity_time))+
+				", max_idle: "+strconv.Itoa(int(runner.max_idle))).(string))
+		if runner.sacrity_time > runner.tk_invalid {
+			if err := runner.refreshTk(); err != nil {
+				logrus.Errorf("%s - fail to refresh token for remove, %v", runner.runner_id, err)
+				return
+			}
+		}
+		runner.removeRunner(runner.home_path, runner.tk, true)
+		os.Exit(0)
+	} else if strings.Contains(strings.ToLower(work_log), "job message") {
+		logrus.Infof("wf still running. idle %v", runner.sacrity_time)
+	} else {
+		logrus.Infof("wf dose not select the runner temporary. idle %v", runner.sacrity_time)
+	}
 }
 
-func (runer *EciRunner) Monitor(obj interface{}, para interface{}) bool {
+func (runner *EciRunner) sacrifyCtl() {
+	logrus.Infof("sacrify ctl start")
+	entries, err := os.ReadDir(runner.home_path + "_diag/")
+	if err == nil {
+		worker_exist := false
+		for _, entry := range entries {
+			if strings.HasPrefix(entry.Name(), "Worker_") {
+				f_b, err := os.ReadFile(runner.home_path + "_diag/" + entry.Name())
+				if err != nil {
+					logrus.Warnf("%s - fail to read the work log %s, %s", runner.runner_id, entry.Name(), err)
+					continue
+				}
+				worker_exist = true
+				runner.idleDetection(string(f_b))
+			}
+		}
+		if !worker_exist {
+			logrus.Warnf("%s - Worker_ dose not exist temporary", runner.runner_id)
+			runner.idleDetection("")
+		}
+	} else {
+		logrus.Errorf("%s - fail to list diag dir, %v", runner.runner_id, err)
+		runner.idleDetection("")
+	}
+}
+
+func (runner *EciRunner) sacrifyCmd() {
+	runcmd := exec.Command(runner.home_path+"_depsh/sacrify.sh", strconv.FormatInt(runner.sacrity_time, 10))
+	out, err := runcmd.Output()
+	if err != nil {
+		logrus.Errorln(runner.runner_id+" - "+string(out), err)
+	}
+}
+
+func (runner *EciRunner) needSacrifice() {
+	for runner.container_type != "pool" {
+		if runner.remote_dockerd {
+			runner.sacrifyCmd()
+		} else {
+			runner.sacrifyCtl()
+		}
+		runner.sacrity_time += runner.sacrify_interval
+		time.Sleep(time.Duration(runner.sacrify_interval) * time.Second)
+	}
+}
+
+func (runner EciRunner) Start() error {
+	runcmd := exec.Command(runner.home_path + "run.sh")
+	err := runcmd.Start()
+	if err != nil {
+		logrus.Errorf("%s - Unable to start runner: %s", runner.runner_id, err)
+		return err
+	}
+	go runner.needSacrifice()
+	return nil
+}
+
+func (runner EciRunner) Info() interface{} {
+	return runner
+}
+
+func (runner *EciRunner) Monitor(obj interface{}, para interface{}) bool {
 	q, _ := obj.(ali_mns.AliMNSQueue)
 	// rChan := make(chan EciRunner, 1)
 	endChan := make(chan bool)
@@ -179,9 +294,9 @@ func (runer *EciRunner) Monitor(obj interface{}, para interface{}) bool {
 		select {
 		case resp := <-respChan:
 			{
-				logrus.Infof("runner received a msg: %s, name %s", resp.MessageBody, runer.runner_name())
-				if strings.Compare(resp.MessageBody, runer.runner_name()) == 0 {
-					logrus.Infof("Found msg... url %s", runer.runner_repo_url)
+				logrus.Infof("runner received a msg: %s, name %s", resp.MessageBody, runner.runnerName())
+				if strings.Compare(resp.MessageBody, runner.runnerName()) == 0 {
+					logrus.Infof("Found msg... url %s", runner.runner_repo_url)
 					if ret, e := q.ChangeMessageVisibility(resp.ReceiptHandle, 5); e != nil {
 						fmt.Println(e)
 					} else {
@@ -191,12 +306,12 @@ func (runer *EciRunner) Monitor(obj interface{}, para interface{}) bool {
 
 						crypto := common.DefaultCryptography(os.Getenv("SLS_ENC_KEY"))
 
-						pref := common.Ternary(strings.Contains(runer.runner_repo_url, runer.en_id),
-							runer.entoken_fqdn, runer.token_fqdn).(string)
-						url := common.Ternary(runer.runner_org != "none", pref+"orgs/"+runer.runner_org+runer.remove_path,
-							pref+"repos/"+runer.runner_repo_owner+"/"+runer.runner_repo_name+runer.remove_path).(string)
-						r_tk, _ := runer.get_tk(crypto.DecryptMsg(runer.runner_token), url, nil)
-						runer.remove_runner(runer.home_path, r_tk)
+						pref := common.Ternary(strings.Contains(runner.runner_repo_url, runner.en_id),
+							runner.entoken_fqdn, runner.token_fqdn).(string)
+						url := common.Ternary(runner.runner_org != "none", pref+"orgs/"+runner.runner_org+runner.remove_path,
+							pref+"repos/"+runner.runner_repo_owner+"/"+runner.runner_repo_name+runner.remove_path).(string)
+						r_tk, _ := runner.getTk(crypto.DecryptMsg(runner.runner_token), url, nil)
+						runner.removeRunner(runner.home_path, r_tk, true)
 
 						endChan <- true
 					}
@@ -206,43 +321,71 @@ func (runer *EciRunner) Monitor(obj interface{}, para interface{}) bool {
 		case err := <-errChan:
 			{
 				if err != nil && !ali_mns.ERR_MNS_MESSAGE_NOT_EXIST.IsEqual(err) {
-					logrus.Errorln(err)
+					logrus.Errorln(runner.runner_id+" - ", err)
 				}
 				endChan <- false
 			}
 		}
 	}()
-	q.ReceiveMessage(respChan, errChan, runer.interval)
+	q.ReceiveMessage(respChan, errChan, runner.interval)
 	return <-endChan
 }
 
-func (runer EciRunner) remove_runner(path string, tk string) error {
-	cmd := exec.Command(path+"config.sh", "remove", "--token", tk)
-	out, err := cmd.Output()
-	if err != nil {
-		logrus.Errorf("Unable to remove runner with token - %s, err - %s, out - %s", tk, err, out)
-		return err
+func (runner EciRunner) removeRunner(path string, tk string, notify bool) error {
+	rmRunner := func() ([]byte, error) {
+		cmd := exec.Command(path+"config.sh", "remove", "--token", tk)
+		return cmd.Output()
 	}
-	logrus.Infof("Finish removing runner %s, out - %s", tk, out)
+	out, err := rmRunner()
+	if err != nil {
+		// network issue: https://github.com/ingka-group-digital/serverless-hosted-runner/issues/39
+		logrus.Errorf("%s - unable to remove runner, err - %s, out - %s", runner.runner_id, err, out)
+		time.Sleep(time.Duration(10) * time.Second)
+		if err := runner.refreshTk(); err != nil {
+			logrus.Errorf("%s - retry and fail to refresh token for remove, %v", runner.runner_id, err)
+		}
+		if out, err = rmRunner(); err != nil {
+			logrus.Errorf("%s - retry and fail to remove runner, err - %s, out - %s", runner.runner_id, err, out)
+		}
+	}
+	if valid_ip := net.ParseIP(runner.dis_ip); valid_ip != nil && notify {
+		state := "Finished"
+		state_msg := "Runner job finished"
+		runner_name := runner.runnerName()
+		labels := runner.runner_repo_name + "," + runner.default_labels
+		notifier := listener.CreateNotifier(runner.dis_ip)
+		notifier.Notify(listener.RunnerState{
+			RunnerId:  &runner.runner_id,
+			State:     &state,
+			StateMsg:  &state_msg,
+			Act:       &runner.runner_action,
+			RunerName: &runner_name,
+			RepoName:  &runner.runner_repo_name,
+			OrgName:   &runner.runner_org,
+			RunWf:     &runner.runner_id,
+			Labels:    &labels,
+			Url:       &runner.runner_repo_url,
+			Owner:     &runner.runner_repo_owner,
+		})
+	}
+	logrus.Infof("Finish notify removing runner %s, out - %s", runner.dis_ip, out)
 	return nil
 }
 
-func (runer EciRunner) parse_response(body io.Reader) (string, error) {
+func (runner EciRunner) parseResponse(body io.Reader) (string, error) {
 	data, _ := io.ReadAll(body)
-	if runer.jit_enabled && runer.container_type != "pool" {
+	if runner.jit_enabled && runner.container_type != "pool" {
 		jitToken := JitToken{}
 		json.Unmarshal(data, &jitToken)
-		logrus.Infof("parse_response JIT output is: %s", jitToken.EncodedJitConfig)
 		return jitToken.EncodedJitConfig, nil
 	} else {
 		regToken := RunnerToken{}
 		json.Unmarshal(data, &regToken)
-		logrus.Infof("parse_response output is: %s", regToken.Token)
 		return regToken.Token, nil
 	}
 }
 
-func (runer EciRunner) get_tk(tk string, url string, body io.Reader) (string, error) {
+func (runner EciRunner) getTk(tk string, url string, body io.Reader) (string, error) {
 	client := http.Client{
 		Timeout: time.Duration(60 * time.Second),
 	}
@@ -251,50 +394,49 @@ func (runer EciRunner) get_tk(tk string, url string, body io.Reader) (string, er
 	request.Header.Set("Authorization", "Bearer "+tk)
 	request.Header.Set("X-GitHub-Api-Version", "2022-11-28")
 	request.Header.Set("User-Agent", "serverless-hosted-runner")
-	if runer.container_type == "pool" {
+	if runner.container_type == "pool" {
 		// prevent to generate same token
 		t, err := strconv.Atoi(os.Getenv("runner"))
 		time.Sleep(time.Duration(t) * time.Second)
 		if err != nil {
-			logrus.Errorf("strconv error: %s", err)
+			logrus.Errorf("%s - strconv error: %s", runner.runner_id, err)
 		}
 	}
 	resp, err := client.Do(request)
-	if err != nil || resp.StatusCode != 201 {
-		logrus.Errorf("Unable to get runner registrtation token %s, %d: %s", tk, resp.StatusCode, err)
-		logrus.Errorln(resp)
+	if err != nil || (resp != nil && resp.StatusCode != 201) {
+		logrus.Errorf("%s - Unable to get runner registrtation url %s, token %s, error %v, resp %v", runner.runner_id, url, tk, err, resp)
 		return "Unable to get runner registration token", err
 	}
 	defer resp.Body.Close()
-	return runer.parse_response(resp.Body)
+	return runner.parseResponse(resp.Body)
 }
 
-func (runer EciRunner) get_org_registration_token(tk string) (string, error) {
-	pref := common.Ternary(strings.Contains(runer.runner_repo_url, runer.en_id), runer.entoken_fqdn, runer.token_fqdn).(string)
-	if runer.jit_enabled && runer.container_type != "pool" {
-		url := pref + "orgs/" + runer.runner_org + runer.jit_path
-		body := "{\"name\":\"" + runer.runner_name() + "\", \"labels\":[\"" + runer.runner_org +
+func (runner EciRunner) getOrgRegToken(tk string) (string, error) {
+	pref := common.Ternary(strings.Contains(runner.runner_repo_url, runner.en_id), runner.entoken_fqdn, runner.token_fqdn).(string)
+	if runner.jit_enabled && runner.container_type != "pool" {
+		url := pref + "orgs/" + runner.runner_org + runner.jit_path
+		body := "{\"name\":\"" + runner.runnerName() + "\", \"labels\":[\"" + runner.runner_org +
 			"\"],\"runner_group_id\":1,\"work_folder\":\"_work\"}"
 		logrus.Infof("Org jit url: %s, body: %s", url, body)
-		return runer.get_tk(tk, url, strings.NewReader(body))
+		return runner.getTk(tk, url, strings.NewReader(body))
 	} else {
-		url := pref + "orgs/" + runer.runner_org + runer.token_path
+		url := pref + "orgs/" + runner.runner_org + runner.token_path
 		logrus.Infof("Org url: %s", url)
-		return runer.get_tk(tk, url, nil)
+		return runner.getTk(tk, url, nil)
 	}
 }
 
-func (runer EciRunner) get_repo_registration_token(tk string) (string, error) {
-	pref := common.Ternary(strings.Contains(runer.runner_repo_url, runer.en_id), runer.entoken_fqdn, runer.token_fqdn).(string)
-	if runer.jit_enabled && runer.container_type != "pool" {
-		url := pref + "repos/" + runer.runner_repo_owner + "/" + runer.runner_repo_name + runer.jit_path
-		body := "{\"name\":\"" + runer.runner_name() + "\", \"labels\":[\"" + runer.runner_repo_name +
+func (runner EciRunner) getRepoRegToken(tk string) (string, error) {
+	pref := common.Ternary(strings.Contains(runner.runner_repo_url, runner.en_id), runner.entoken_fqdn, runner.token_fqdn).(string)
+	if runner.jit_enabled && runner.container_type != "pool" {
+		url := pref + "repos/" + runner.runner_repo_owner + "/" + runner.runner_repo_name + runner.jit_path
+		body := "{\"name\":\"" + runner.runnerName() + "\", \"labels\":[\"" + runner.runner_repo_name +
 			"\"],\"runner_group_id\":1,\"work_folder\":\"_work\"}"
 		logrus.Infof("Repo jit url: %s", url)
-		return runer.get_tk(tk, url, strings.NewReader(body))
+		return runner.getTk(tk, url, strings.NewReader(body))
 	} else {
-		url := pref + "repos/" + runer.runner_repo_owner + "/" + runer.runner_repo_name + runer.token_path
+		url := pref + "repos/" + runner.runner_repo_owner + "/" + runner.runner_repo_name + runner.token_path
 		logrus.Infof("Repo url: %s", url)
-		return runer.get_tk(tk, url, nil)
+		return runner.getTk(tk, url, nil)
 	}
 }

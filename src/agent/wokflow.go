@@ -57,7 +57,7 @@ type WorkFlow struct {
 
 func CreateWorkflowAgent(t string, name string, url string, crt common.CreateRunner, des common.DestroyRunner,
 	rel common.ReleaseRunner, ck common.CheckRunner, repo string, org string, iv int, labels string) Agent {
-	return &WorkFlow{t, name, url, org, repo, nil, false, "", "", "", "", crt, des, rel, ck, iv, labels, -6, 300}
+	return &WorkFlow{t, name, url, org, repo, nil, false, "", "", "", "", crt, des, rel, ck, iv, labels, -2, 1200}
 }
 
 func (wf *WorkFlow) InitAgent() {
@@ -165,11 +165,12 @@ func (wf *WorkFlow) checkQueuedCompleteRun(runs common.WorkflowRuns, rep common.
 					wf.check(job.Labels, wf.repo, wf.org, wf.t, wf.labels) {
 					wf.jobid = strconv.FormatInt(job.ID, 10)
 					wf.runner = job.RunnerName // repo - event_data.WorkflowJob.RunID - WorkflowJob.ID
-					logrus.Infof("destroy runner, %s, jobid %s, repo %s, org %s",
-						job.RunnerName, wf.jobid, wf.repo, wf.org)
+					logrus.Infof("destroy runner, %s, jobid %s, repo %s, org %s, label %s, url %s, runner id %s",
+						job.RunnerName, wf.jobid, wf.repo, wf.org, job.Labels, wf.url, wf.runner)
 					//wf.NotifyAgent(job.RunnerName)
 					go wf.destroy(WfStatusCompleted, job.RunnerName, wf.repo, wf.org,
-						strconv.FormatInt(job.RunID, 10)+"-"+strconv.FormatInt(job.ID, 10))
+						strconv.FormatInt(job.RunID, 10)+"-"+strconv.FormatInt(job.ID, 10),
+						job.Labels, wf.url, rep.Owner.Login)
 				}
 			}
 		}

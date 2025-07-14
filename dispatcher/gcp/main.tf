@@ -16,8 +16,8 @@ module "gcp_dispatcher_module" {
   source = "../../module/gcp/cloudrunservice"
   gcp_group = {
     name = var.gcp_dispatcher.group_name
-    cpu  = var.gcp_dispatcher.cpu
-    memory = var.gcp_dispatcher.memory
+    cpu  = var.dispacher_cpu
+    memory = var.dispacher_memory
     tags = {
       product = "serverless-hosted-runner",
       team = var.team,
@@ -30,7 +30,7 @@ module "gcp_dispatcher_module" {
   }
   gcp_container = {
     name = var.gcp_dispatcher.container_name
-    image = join("/", ["gcr.io", var.gcp_project, var.gcp_dispatcher.container_image])
+    image = join("/", ["${var.gcp_region}-docker.pkg.dev", var.gcp_project, "serverless-hosted-runner", var.gcp_dispatcher.container_image])
     image_ver = var.image_ver
     ctx_log_level = var.ctx_log_level
     startup_cmd = var.gcp_dispatcher.startup_cmd
@@ -46,5 +46,6 @@ module "gcp_dispatcher_module" {
     runner_lazy_regs = var.lazy_regs
     runner_allen_regs = var.allen_regs
     cloud_pr = var.cloud_pr
+    tf_ctl = var.tf_ctl
   }
 }

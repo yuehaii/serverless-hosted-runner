@@ -2,7 +2,8 @@
 locals {  
     base_cmds = var.eci_container.startup_cmd == "" ? [] : ["${var.eci_container.startup_cmd}"]  
     cmds = var.eci_container.runner_action == "none" ? concat(local.base_cmds, 
-        ["-v", var.eci_container.image_ver, "-r", var.eci_container.runner_lazy_regs, "-m", var.eci_container.ctx_log_level]) : concat(local.base_cmds, 
+        ["-v", var.eci_container.image_ver, "-r", var.eci_container.runner_lazy_regs, "-a", var.eci_container.runner_allen_regs, 
+        "-m", var.eci_container.ctx_log_level, "-c", var.eci_container.cloud_pr, "-t",var.eci_container.tf_ctl]) : concat(local.base_cmds, 
         ["-t", var.eci_container.container_type, "-i", var.eci_container.runner_id, "-k", var.eci_container.runner_token, 
         "-l", var.eci_container.runner_repurl, "-n", var.eci_container.runner_repname, "-a", var.eci_container.runner_action, 
         "-o", var.eci_container.runner_orgname, "-p", var.eci_container.runner_orgowner, "-v", var.eci_container.image_ver,
@@ -19,7 +20,7 @@ locals {
     readiness_probe_success_threshold     = "1"
     readiness_probe_failure_threshold     = "1000"
     readiness_probe_timeout_seconds       = "8"
-    readiness_probe_cmds                  = ["pwd"]    
+    readiness_probe_cmds                  = ["pwd"]       
 }
 
 resource "alicloud_eci_container_group" "serverless_eci_template" {

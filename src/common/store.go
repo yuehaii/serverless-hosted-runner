@@ -36,7 +36,16 @@ type Store interface {
 	GetGcpCredential() (string, string)
 	GetGcpProject() (string, string)
 	GetGcpRegion() (string, string)
+	GetGcpSA() (string, string)
+	GetGcpApikey() (string, string)
+	GetGcpDind() (string, string)
+	GetGcpVpc() (string, string)
+	GetGcpSubnet() (string, string)
+	GetImageVersion() (string, string)
 	GetArmClientId() (string, string)
+	GetAciLocation() (string, string)
+	GetAciSku() (string, string)
+	GetAciNetworkType() (string, string)
 	GetArmClientSecret() (string, string)
 	GetArmSubscriptionId() (string, string)
 	GetArmTenantId() (string, string)
@@ -49,7 +58,16 @@ type Store interface {
 	GetPreGcpCredential() string
 	GetPreGcpProject() string
 	GetPreGcpRegion() string
+	GetPreGcpSA() string
+	GetPreGcpApikey() string
+	GetPreGcpDind() string
+	GetPreGcpVpc() string
+	GetPreGcpSubnet() string
+	GetPreImageVersion() string
 	GetPreArmClientId() string
+	GetPreAciLocation() string
+	GetPreAciSku() string
+	GetPreAciNetworkType() string
 	GetPreArmClientSecret() string
 	GetPreArmSubscriptionId() string
 	GetPreArmTenantId() string
@@ -57,6 +75,9 @@ type Store interface {
 	GetPreArmRPRegistration() string
 	GetPreArmResourceGroupName() string
 	GetPreArmSubnetID() string
+	IsDestory(string) bool
+	MarkDestory(string)
+	ResetDestory(string)
 }
 
 func EnvStore(msg *PoolMsg, org string, repo string) Store {
@@ -77,6 +98,18 @@ type MsgStore struct {
 	gitfqdn string
 	enfqdn  string
 	enckey  string
+}
+
+func (store MsgStore) IsDestory(workflow string) bool {
+	return os.Getenv(workflow) == workflow
+}
+
+func (store MsgStore) MarkDestory(workflow string) {
+	os.Setenv(workflow, workflow)
+}
+
+func (store MsgStore) ResetDestory(workflow string) {
+	os.Setenv(workflow, "")
 }
 
 func (store MsgStore) get(key string) string {
@@ -198,10 +231,55 @@ func (store MsgStore) setMsgGcpRegion() {
 	store.set(store.msgKey("GcpRegionPre"), pre)
 	store.set(store.msgKey("GcpRegion"), store.msg.GcpRegion)
 }
+func (store MsgStore) setMsgGcpSA() {
+	pre, _ := store.msgItem("GcpSA")
+	store.set(store.msgKey("GcpSAPre"), pre)
+	store.set(store.msgKey("GcpSA"), store.msg.GcpSA)
+}
+func (store MsgStore) setMsgGcpApikey() {
+	pre, _ := store.msgItem("GcpApikey")
+	store.set(store.msgKey("GcpApikeyPre"), pre)
+	store.set(store.msgKey("GcpApikey"), store.msg.GcpApikey)
+}
+func (store MsgStore) setMsgGcpDind() {
+	pre, _ := store.msgItem("GcpDind")
+	store.set(store.msgKey("GcpDindPre"), pre)
+	store.set(store.msgKey("GcpDind"), store.msg.GcpDind)
+}
+func (store MsgStore) setMsgGcpVpc() {
+	pre, _ := store.msgItem("GcpVpc")
+	store.set(store.msgKey("GcpVpcPre"), pre)
+	store.set(store.msgKey("GcpVpc"), store.msg.GcpVpc)
+}
+func (store MsgStore) setMsgGcpSubnet() {
+	pre, _ := store.msgItem("GcpSubnet")
+	store.set(store.msgKey("GcpSubnetPre"), pre)
+	store.set(store.msgKey("GcpSubnet"), store.msg.GcpSubnet)
+}
+func (store MsgStore) setMsgImageVersion() {
+	pre, _ := store.msgItem("ImageVersion")
+	store.set(store.msgKey("ImageVersionPre"), pre)
+	store.set(store.msgKey("ImageVersion"), store.msg.ImageVersion)
+}
 func (store MsgStore) setMsgArmClientId() {
 	pre, _ := store.msgItem("ArmClientId")
 	store.set(store.msgKey("ArmClientIdPre"), pre)
 	store.set(store.msgKey("ArmClientId"), store.msg.ArmClientId)
+}
+func (store MsgStore) setMsgAciLocation() {
+	pre, _ := store.msgItem("AciLocation")
+	store.set(store.msgKey("AciLocationPre"), pre)
+	store.set(store.msgKey("AciLocation"), store.msg.AciLocation)
+}
+func (store MsgStore) setMsgAciSku() {
+	pre, _ := store.msgItem("AciSku")
+	store.set(store.msgKey("AciSkuPre"), pre)
+	store.set(store.msgKey("AciSku"), store.msg.AciSku)
+}
+func (store MsgStore) setMsgAciNetworkType() {
+	pre, _ := store.msgItem("AciNetworkType")
+	store.set(store.msgKey("AciNetworkTypePre"), pre)
+	store.set(store.msgKey("AciNetworkType"), store.msg.AciNetworkType)
 }
 func (store MsgStore) setMsgArmClientSecret() {
 	pre, _ := store.msgItem("ArmClientSecret")
@@ -267,7 +345,16 @@ func (store MsgStore) Save() {
 	store.setMsgGcpCredential()
 	store.setMsgGcpProject()
 	store.setMsgGcpRegion()
+	store.setMsgGcpSA()
+	store.setMsgGcpApikey()
+	store.setMsgGcpDind()
+	store.setMsgGcpVpc()
+	store.setMsgGcpSubnet()
+	store.setMsgImageVersion()
 	store.setMsgArmClientId()
+	store.setMsgAciLocation()
+	store.setMsgAciSku()
+	store.setMsgAciNetworkType()
 	store.setMsgArmClientSecret()
 	store.setMsgArmSubscriptionId()
 	store.setMsgArmTenantId()
@@ -354,8 +441,35 @@ func (store MsgStore) GetGcpProject() (string, string) {
 func (store MsgStore) GetGcpRegion() (string, string) {
 	return store.msgItem("GcpRegion")
 }
+func (store MsgStore) GetGcpSA() (string, string) {
+	return store.msgItem("GcpSA")
+}
+func (store MsgStore) GetGcpApikey() (string, string) {
+	return store.msgItem("GcpApikey")
+}
+func (store MsgStore) GetGcpDind() (string, string) {
+	return store.msgItem("GcpDind")
+}
+func (store MsgStore) GetGcpVpc() (string, string) {
+	return store.msgItem("GcpVpc")
+}
+func (store MsgStore) GetGcpSubnet() (string, string) {
+	return store.msgItem("GcpSubnet")
+}
+func (store MsgStore) GetImageVersion() (string, string) {
+	return store.msgItem("ImageVersion")
+}
 func (store MsgStore) GetArmClientId() (string, string) {
 	return store.msgItem("ArmClientId")
+}
+func (store MsgStore) GetAciLocation() (string, string) {
+	return store.msgItem("AciLocation")
+}
+func (store MsgStore) GetAciSku() (string, string) {
+	return store.msgItem("AciSku")
+}
+func (store MsgStore) GetAciNetworkType() (string, string) {
+	return store.msgItem("AciNetworkType")
 }
 func (store MsgStore) GetArmClientSecret() (string, string) {
 	return store.msgItem("ArmClientSecret")
@@ -448,8 +562,44 @@ func (store MsgStore) GetPreGcpRegion() string {
 	item, _ := store.msgItem("GcpRegionPre")
 	return item
 }
+func (store MsgStore) GetPreGcpSA() string {
+	item, _ := store.msgItem("GcpSAPre")
+	return item
+}
+func (store MsgStore) GetPreGcpApikey() string {
+	item, _ := store.msgItem("GcpApikeyPre")
+	return item
+}
+func (store MsgStore) GetPreGcpDind() string {
+	item, _ := store.msgItem("GcpDindPre")
+	return item
+}
+func (store MsgStore) GetPreGcpVpc() string {
+	item, _ := store.msgItem("GcpVpcPre")
+	return item
+}
+func (store MsgStore) GetPreGcpSubnet() string {
+	item, _ := store.msgItem("GcpSubnetPre")
+	return item
+}
+func (store MsgStore) GetPreImageVersion() string {
+	item, _ := store.msgItem("ImageVersionPre")
+	return item
+}
 func (store MsgStore) GetPreArmClientId() string {
 	item, _ := store.msgItem("ArmClientIdPre")
+	return item
+}
+func (store MsgStore) GetPreAciLocation() string {
+	item, _ := store.msgItem("AciLocationPre")
+	return item
+}
+func (store MsgStore) GetPreAciSku() string {
+	item, _ := store.msgItem("AciSkuPre")
+	return item
+}
+func (store MsgStore) GetPreAciNetworkType() string {
+	item, _ := store.msgItem("AciNetworkTypePre")
 	return item
 }
 func (store MsgStore) GetPreArmClientSecret() string {
@@ -498,7 +648,16 @@ func (store MsgStore) AnyChange() bool {
 	gcp_credentials, _ := store.GetGcpCredential()
 	gcp_project, _ := store.GetGcpProject()
 	gcp_region, _ := store.GetGcpRegion()
+	gcp_sa, _ := store.GetGcpSA()
+	gcp_apikey, _ := store.GetGcpApikey()
+	gcp_dind, _ := store.GetGcpDind()
+	gcp_vpc, _ := store.GetGcpVpc()
+	gcp_subnet, _ := store.GetGcpSubnet()
+	image_ver, _ := store.GetImageVersion()
 	arm_client_id, _ := store.GetArmClientId()
+	aci_location, _ := store.GetAciLocation()
+	aci_sku, _ := store.GetAciSku()
+	aci_network_type, _ := store.GetAciNetworkType()
 	arm_client_secret, _ := store.GetArmClientSecret()
 	arm_subscription_id, _ := store.GetArmSubscriptionId()
 	arm_tenant_id, _ := store.GetArmTenantId()
@@ -516,7 +675,16 @@ func (store MsgStore) AnyChange() bool {
 		gcp_credentials == store.GetPreGcpCredential() &&
 		gcp_project == store.GetPreGcpProject() &&
 		gcp_region == store.GetPreGcpRegion() &&
+		gcp_sa == store.GetPreGcpSA() &&
+		gcp_apikey == store.GetPreGcpApikey() &&
+		gcp_dind == store.GetPreGcpDind() &&
+		gcp_vpc == store.GetPreGcpVpc() &&
+		gcp_subnet == store.GetPreGcpSubnet() &&
+		image_ver == store.GetPreImageVersion() &&
 		arm_client_id == store.GetPreArmClientId() &&
+		aci_location == store.GetPreAciLocation() &&
+		aci_sku == store.GetPreAciSku() &&
+		aci_network_type == store.GetPreAciNetworkType() &&
 		arm_client_secret == store.GetPreArmClientSecret() &&
 		arm_subscription_id == store.GetPreArmSubscriptionId() &&
 		arm_tenant_id == store.GetPreArmTenantId() &&

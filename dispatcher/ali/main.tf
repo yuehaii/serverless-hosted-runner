@@ -39,8 +39,8 @@ module "eci_dispatcher_module" {
     image_retrieve_server = var.IMAGE_RETRIEVE_SERVER
     image_retrieve_uname = var.IMAGE_RETRIEVE_USERNAME
     image_retrieve_psw = var.IMAGE_RETRIEVE_PWD
-    cpu  = var.eci_dispatcher.cpu
-    memory = var.eci_dispatcher.memory
+    cpu  = var.dispacher_cpu
+    memory = var.dispacher_memory
     image_cache = true
     tags = {
       product = "serverless-hosted-runner",
@@ -61,6 +61,7 @@ module "eci_dispatcher_module" {
     startup_cmd = var.eci_dispatcher.startup_cmd
     ports_port = var.eci_dispatcher.ports_port 
     container_type = var.container_type
+    need_privileged = true
     runner_id = var.runner_id
     runner_token = var.runner_token
     runner_repurl = var.runner_repurl
@@ -71,7 +72,22 @@ module "eci_dispatcher_module" {
     runner_lazy_regs = var.lazy_regs
     runner_allen_regs = var.allen_regs
     cloud_pr = var.cloud_pr
+    tf_ctl = var.tf_ctl
   }
+  eci_mount = var.oss_mount == ""? {} : {
+    "oss-sls" =  {
+      oss_mount_path = "/go/bin/_work"
+      oss_volume_name = var.runner_repname
+      oss_mount_path = "/go/bin/_work"
+      oss_bucket = var.oss_mount
+      oss_url = "oss-cn-shanghai.aliyuncs.com"
+      oss_path =  join("/", ["/sls_mount", var.runner_repname, var.runner_id, var.oss_mount])
+      oss_ram_role = "sls-mount-oss"
+      oss_type = "FlexVolume"
+      oss_driver = "alicloud/oss"
+    }
+  }
+  eci_init_container = {}
 }
 
 # slb for webhook

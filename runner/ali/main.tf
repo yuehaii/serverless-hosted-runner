@@ -66,5 +66,21 @@ module "eci_self_hosted_runner" {
     working_dir = var.eci_runner.working_dir
     startup_cmd = var.eci_runner.startup_cmd
     ports_port = var.eci_runner.ports_port 
+    cloud_pr = var.cloud_pr
+    dis_ip = var.dis_ip
   }
+  eci_mount = var.oss_mount == ""? {} : {
+    "oss-sls" =  {
+      oss_mount_path = "/go/bin/_work"
+      oss_volume_name = var.runner_repname
+      oss_mount_path = "/go/bin/_work"
+      oss_bucket = var.oss_mount
+      oss_url = "oss-cn-shanghai.aliyuncs.com"
+      oss_path =  join("/", ["/sls_mount", var.runner_repname, var.runner_id, var.oss_mount])
+      oss_ram_role = "sls-mount-oss"
+      oss_type = "FlexVolume"
+      oss_driver = "alicloud/oss"
+    }
+  }
+  eci_init_container = {}
 }

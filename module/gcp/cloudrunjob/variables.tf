@@ -1,6 +1,7 @@
 variable gcp_group {
     description = "all gcp cloudrun job vars definition"
     type = object ({
+        project_id = string
         name = optional(string, "serverless-hosted-runner")
         provider = optional(string, "google-beta")
         location = optional(string, "us-central1")
@@ -32,6 +33,8 @@ variable gcp_container {
       need_privileged = optional(bool, false) 
       environment_variables_name = optional(string, "runner")
       environment_variables_value = optional(string, "gcp")
+      tf_ctl = optional(string, "go") 
+      dis_ip = optional(string, "")
       cloud_pr = optional(string, "gcp")
       ctx_log_level = optional(string, "13")
       container_type = optional(string, "none")

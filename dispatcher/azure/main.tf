@@ -25,8 +25,6 @@ module "aci_dispatcher_module" {
     image_retrieve_server = var.IMAGE_RETRIEVE_SERVER
     image_retrieve_uname = var.IMAGE_RETRIEVE_USERNAME
     image_retrieve_psw = var.IMAGE_RETRIEVE_PWD
-    cpu  = var.aci_dispatcher.cpu
-    memory = var.aci_dispatcher.memory
     image_cache = true
     tags = {
       product = "serverless-hosted-runner",
@@ -42,6 +40,8 @@ module "aci_dispatcher_module" {
   aci_container = {
     name = var.aci_dispatcher.container_name
     image = var.aci_dispatcher.container_image
+    cpu  = var.dispacher_cpu
+    memory = var.dispacher_memory
     image_ver = var.image_ver
     ctx_log_level = var.ctx_log_level
     startup_cmd = var.aci_dispatcher.startup_cmd
@@ -57,5 +57,6 @@ module "aci_dispatcher_module" {
     runner_lazy_regs = var.lazy_regs
     runner_allen_regs = var.allen_regs
     cloud_pr = var.cloud_pr
+    tf_ctl = var.tf_ctl
   }
 }

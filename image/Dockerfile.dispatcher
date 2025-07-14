@@ -1,4 +1,4 @@
-FROM artifactory.cloud.ingka-system.cn/ccoecn-docker-virtual/golang:1.21.3 As builder
+FROM artifactory.cloud.ingka-system.cn/ccoecn-docker-virtual/golang:1.24.0 As builder
 
 WORKDIR /go/src/app
 
@@ -13,7 +13,8 @@ RUN echo "machine github.com login ${GIT_ACCESS_TOKEN_USR} password ${GIT_ACCESS
 RUN cd ./src; go env -w GOPRIVATE=github.com/ingka-group-digital/*; go mod download; \
     GOOS=linux CGO_ENABLED=0 GOARCH=amd64 go build -o /go/src/app/bin/dispatcher ./dispatcher/
 
-FROM artifactory.cloud.ingka-system.cn/ccoecn-docker-virtual/ubuntu:18.04
+# 18.04 --> 24.04 due to latest (3/6/2025) rclone dependency
+FROM artifactory.cloud.ingka-system.cn/ccoecn-docker-virtual/ubuntu:24.04
 
 ARG MNS_URL
 ARG ACCESS_KEY
@@ -38,12 +39,7 @@ ARG ALLEN_DB_DBNAME
 ARG ALLEN_DB_TABLE
 ARG CTX_USERNAME
 ARG CTX_PWD
-# ARG ARM_CLIENT_ID
-# ARG ARM_CLIENT_SECRET
-# ARG ARM_SUBSCRIPTION_ID
-# ARG ARM_TENANT_ID
-# ARG ARM_ENVIRONMENT
-# ARG ARM_RESOURCE_PROVIDER_REGISTRATIONS
+ARG SLS_TF_CTL
 
 ENV TF_VAR_IMAGE_RETRIEVE_USERNAME=$IMAGE_RETRIEVE_USERNAME
 ENV TF_VAR_IMAGE_RETRIEVE_PWD=$IMAGE_RETRIEVE_PWD
@@ -71,6 +67,7 @@ RUN apt-get update -y -q && apt-get upgrade -y -q && \
         curl \
         unzip \
         jq \
+        openssh-client \
         gettext-base \
         libc6 \
         vim \
@@ -85,14 +82,18 @@ RUN wget https://releases.hashicorp.com/terraform/${TF_VER}/terraform_${TF_VER}_
     rm ./terraform_${TF_VER}_linux_${TF_PLATFORM}.zip; echo 200 > /tmp/healthy
 
 COPY --from=builder /go/src/app/bin/dispatcher ./dispatcher
-COPY src/dispatcher/*.sh ./
+COPY src/_depsh ./_depsh
+RUN if [ "$SLS_TF_CTL" != "go" ] ; then cp -rf ./_depsh/*.sh ./; fi; rm -rf ./_depsh
 COPY runner/ ./runner/
 COPY cache/ ./cache/
 COPY module/ ./module/
 COPY template/ ./template/
+COPY src/certs/ca.cert.pem ./certs/
+COPY src/certs/ca.key.pem ./certs/
 
-# RUN mkdir /go/bin/tf_plugin_cache && export TF_PLUGIN_CACHE_DIR="/go/bin/tf_plugin_cache" && cd ./runner && \
-#     terraform init && cp ./.terraform.lock.hcl /go/bin/tf_plugin_cache/.terraform.lock.hcl && \
-#     rm -rf ./.terraform && rm ./.terraform.lock.hcl
+# workaround for network issue: https://github.com/ingka-group-digital/serverless-hosted-runner/issues/42
+RUN mkdir /go/bin/tf_plugin_cache && export TF_PLUGIN_CACHE_DIR="/go/bin/tf_plugin_cache" && \
+    cp -rf ./runner/ali ./init_tf; cd ./init_tf && \
+    terraform init && cd ..; rm -rf ./init_tf
 
 EXPOSE 61201

@@ -1,0 +1,27 @@
+edition = "2023";
+option go_package = "serverless-hosted-runner/src/network/grpc/";
+
+package grpc;
+
+service RunnerListener {
+    rpc NotifyRunnerState(RunnerState) returns (ProcessState) {}
+}
+
+message RunnerState {
+    string runnerId = 1;
+    string state = 2;
+    string stateMsg = 3;
+    string act = 4;
+    string runer_name = 5;
+    string repo_name = 6;
+    string org_name = 7;
+    string run_wf = 8;
+    string labels = 9;
+    string url = 10;
+    string owner = 11;
+}
+
+message ProcessState {
+    bool   state = 1;
+    string stateMsg = 2;
+}

@@ -68,7 +68,8 @@ on:
         default: '{"size":"1","cpu":"1.0","memory":"2.0"}'
 jobs:
   build:
-    runs-on: serverless-hosted-runner
+    runs-on: serverless-hosted-runner-gcp
+    # runs-on: serverless-hosted-runner
     # runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -85,4 +86,4 @@ jobs:
           echo "::add-mask::$SLS_RUNNER_PAT" 
           mkdir ~/app; cd ./src; go mod download 
           go build -o ~/app/poolagent ./pool/main.go  
-          ~/app/poolagent
+          # ~/app/poolagent

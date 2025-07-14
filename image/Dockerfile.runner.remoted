@@ -1,4 +1,4 @@
-FROM artifactory.cloud.ingka-system.cn/ccoecn-docker-virtual/golang:1.21.3 As builder
+FROM artifactory.cloud.ingka-system.cn/ccoecn-docker-virtual/golang:1.24.0 As builder
 
 WORKDIR /go/src/app
 
@@ -28,6 +28,7 @@ ARG DOCKER_COMPOSE_VERSION=v2.23.0
 ARG DUMB_INIT_VERSION=1.2.5
 ARG RUNNER_USER_UID=1001
 ARG DOCKER_GROUP_GID=121
+ARG ei=14
 ENV DEBIAN_FRONTEND=noninteractive
 
 ENV RUNNER_PLATFORM $RUNNER_PLATFORM

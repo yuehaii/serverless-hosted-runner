@@ -8,7 +8,7 @@ function common::print {
 }
 
 function common::hide {
-   sed 's/.\{5\}$/*****/' <<< $1
+   sed 's/.\{'${2:-5}'\}$/*****/' <<< $1
 }
 
 function common::hide::tfstate {

@@ -11,4 +11,5 @@ template/dockerd/serverless-runner-docerd-secrets.pem
 src/dispatcher/create_runner_pre_refactor.sh
 dispatcher/*/.*
 ingka-ccoe-gcptaskforce-dev*.json
-dispatcher/gcp/.terraform/modules/modules.json
+dispatcher/gcp/.terraform
+src/certs

@@ -11,6 +11,9 @@ module "aci_self_hosted_runner" {
   source = "../module/azure/aci"
   aci_group = { 
     name = var.group_name
+    location = var.aci_location
+    sku = var.aci_sku
+    ip_address_type = var.aci_network_type
     subnet_ids = var.subnet_ids
     resource_group_name = var.resource_group_name
     image_retrieve_server = var.IMAGE_RETRIEVE_SERVER
@@ -52,5 +55,7 @@ module "aci_self_hosted_runner" {
     ctx_log_level = var.ctx_log_level
     startup_cmd = var.aci_runner.startup_cmd
     ports_port = var.aci_runner.ports_port 
+    cloud_pr = var.cloud_pr
+    dis_ip = var.dis_ip
   }
 }

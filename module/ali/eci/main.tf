@@ -3,11 +3,12 @@ locals {
     base_cmds = var.eci_container.startup_cmd == "" ? [] : ["${var.eci_container.startup_cmd}"]  
     cmds = var.eci_container.runner_action == "none" ? concat(local.base_cmds, 
         ["-v", var.eci_container.image_ver, "-r", var.eci_container.runner_lazy_regs, "-a", var.eci_container.runner_allen_regs, 
-        "-m", var.eci_container.ctx_log_level, "-c", var.eci_container.cloud_pr]) : concat(local.base_cmds, 
+        "-m", var.eci_container.ctx_log_level, "-c", var.eci_container.cloud_pr, "-t",var.eci_container.tf_ctl]) : concat(local.base_cmds, 
         ["-t", var.eci_container.container_type, "-i", var.eci_container.runner_id, "-k", var.eci_container.runner_token, 
         "-l", var.eci_container.runner_repurl, "-n", var.eci_container.runner_repname, "-a", var.eci_container.runner_action, 
         "-o", var.eci_container.runner_orgname, "-p", var.eci_container.runner_orgowner, "-v", var.eci_container.image_ver,
-        "-b", var.eci_container.runner_labels, "-g", var.eci_container.runner_group, "-m", var.eci_container.ctx_log_level]) 
+        "-b", var.eci_container.runner_labels, "-g", var.eci_container.runner_group, "-m", var.eci_container.ctx_log_level,
+        "-c", var.eci_container.cloud_pr, "-d",var.eci_container.dis_ip]) 
     liveness_probe_period_seconds        = "10"
     liveness_probe_initial_delay_seconds = "5"
     liveness_probe_success_threshold     = "1"
@@ -23,10 +24,11 @@ locals {
     readiness_probe_cmds                  = ["pwd"]     
 }
 
+
 resource "alicloud_eci_container_group" "serverless_eci_template" {
     container_group_name = var.eci_group.name
-    cpu = var.eci_group.cpu
-    memory = var.eci_group.memory
+    cpu = trim(var.eci_group.cpu, " ")
+    memory = trim(var.eci_group.memory, " ")
     auto_match_image_cache = var.eci_group.image_cache
     restart_policy = var.eci_group.restart_policy
     security_group_id =  var.eci_group.security_group_id
@@ -68,13 +70,19 @@ resource "alicloud_eci_container_group" "serverless_eci_template" {
             key   = var.eci_container.environment_key
             value = var.eci_container.environment_val 
         } 
-        # # pass testing. ref link below for oss ram role: 
-        # # https://www.alibabacloud.com/help/zh/eci/user-guide/mount-an-oss-bucket-to-an-elastic-container-instance-as-a-volume?spm=a2c63.p38356.0.0.47203166MHLy8b#6b389eb05f549
-        # volume_mounts {
-        #     name       = var.eci_container.oss_volume_name
-        #     mount_path = var.eci_container.oss_mount_path
-        #     read_only  = false
-        # }
+        dynamic volume_mounts {
+            for_each = var.eci_mount
+            content {
+                name       = volume_mounts.value["oss_volume_name"]
+                mount_path = volume_mounts.value["oss_mount_path"]
+                read_only  = false
+            }
+        }
+        volume_mounts {
+            mount_path = var.eci_container.docker_mount_path
+            read_only  = false
+            name       = var.eci_container.docker_volume_name
+        }
         liveness_probe {
             period_seconds        = local.liveness_probe_period_seconds
             initial_delay_seconds = local.liveness_probe_initial_delay_seconds
@@ -96,15 +104,37 @@ resource "alicloud_eci_container_group" "serverless_eci_template" {
             }
         }
     }
-    # # incase we need to store the state after runner reboot
-    # volumes {
-    #     name = var.eci_container.oss_volume_name
-    #     type = "FlexVolume"
-    #     flex_volume_driver = "alicloud/oss" 
-    #     flex_volume_options = format("{\"bucket\":\"%s\",\"url\":\"%s\",\"path\":\"%s\",\"ramRole\":\"%s\"}",
-    #         var.eci_container.oss_bucket, var.eci_container.oss_url, 
-    #         var.eci_container.oss_path, var.eci_container.oss_ram_role)
-    # }
+    dynamic init_containers {
+        for_each = var.eci_init_container
+        content {
+            name = init_containers.value["init_container_name"]
+            image             = init_containers.value["init_container_image"]
+            image_pull_policy = init_containers.value["init_container_pullpolicy"]
+            commands          = init_containers.value["init_container_cmds"]
+            args              = init_containers.value["init_container_args"]
+            security_context {
+                capability {
+                add = [ "CAP_SYS_ADMIN" ]
+                }
+            }
+        }
+
+    }
+    dynamic volumes {
+        for_each = var.eci_mount
+        content {
+            name = volumes.value["oss_volume_name"]
+            type = volumes.value["oss_type"]
+            flex_volume_driver = volumes.value["oss_driver"]
+            flex_volume_options = format("{\"bucket\":\"%s\",\"url\":\"%s\",\"path\":\"%s\",\"ramRole\":\"%s\"}",
+                volumes.value["oss_bucket"], volumes.value["oss_url"], 
+                volumes.value["oss_path"], volumes.value["oss_ram_role"])
+        }
+    }
+    volumes {
+        name = var.eci_container.docker_volume_name
+        type = var.eci_container.docker_volume_type
+    }
 } 
 output "eci_id" {
   value = alicloud_eci_container_group.serverless_eci_template.id

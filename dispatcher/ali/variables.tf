@@ -130,6 +130,22 @@ variable "workspace_key"  {
     type=string 
     default="none" 
 }
+variable "dispacher_cpu"  { 
+    type=string 
+    default="2.0" 
+}
+variable "dispacher_memory"  { 
+    type=string 
+    default="4.0" 
+}
+variable "tf_ctl" {
+    type = string
+    default = "cmd"
+}
+variable "oss_mount" {
+    type = string
+    default = ""
+}
 # variable "tf_bucket"  { 
 #     type=string 
 #     default="sls-tf-ccoecn" 

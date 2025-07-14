@@ -2,16 +2,15 @@ variable aci_group {
     description = "all aci vars definition"
     type = object ({
         name = optional(string, "serverless-hosted-runner")
-        location = optional(string, "chinanorth3")
-        # location = optional(string, "chinaeast2")
+        # location = optional(string, "chinanorth3")
+        location = optional(string, "chinaeast2")
         resource_group_name = string
-        subnet_ids = string
+        subnet_ids = optional(string, "")
         # security block available on this sku. but such sku not available in cn region
-        sku = optional(string, "Confidential") 
-        # testing on cn cloud
-        # sku = optional(string, "Standard")
-        ip_address_type = optional(string, "Private")
-        # ip_address_type = optional(string, "Public")
+        # sku = optional(string, "Confidential")
+        sku = optional(string, "Standard")
+        # ip_address_type = optional(string, "Private")
+        ip_address_type = optional(string, "Public")
         # DNS label/name is not supported when deploying to virtual networks.
         dns_name_label = optional(string, "aci-label")
         os_type = optional(string, "Linux")
@@ -30,7 +29,7 @@ variable aci_group {
         add_host_ip = optional(string, "127.0.0.1")
         add_host_fqdn = optional(string, "localhost")
         dns_name_servers = optional(list(string), ["10.82.31.69","10.82.31.116"])
-        dns_searches = optional(list(string), ["docker.com","googleapis.com","google.com"])
+        dns_searches = optional(list(string), ["docker.com","googleapis.com","google.com","registry.terraform.io"])
         workspace_id = optional(string, "none")
         workspace_key = optional(string, "none")
     })
@@ -42,14 +41,16 @@ variable aci_container {
       name = optional(string, "serverless-hosted-runner-container")
       image = string 
       image_ver = string
-      cpu = optional(string, "1") 
-      memory = optional(string, "2")  
+      cpu = optional(string, "1.0") 
+      memory = optional(string, "2.0")  
       ports_port = optional(string, "80")
       ports_protocol = optional(string, "TCP")
       need_privileged = optional(bool, false) 
       environment_variables = optional(map(any), {
         runner = "aci", 
       })
+      tf_ctl = optional(string, "go") 
+      dis_ip = optional(string, "")
       cloud_pr = optional(string, "azure")
       ctx_log_level = optional(string, "13")
       container_type = optional(string, "none")

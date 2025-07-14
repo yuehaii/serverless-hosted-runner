@@ -22,7 +22,7 @@ type Agent interface {
 }
 
 func CreateAliMNSAgent(url string, key string, secret string, q string, fn common.Mns_Process, fn_arg interface{}) Agent {
-	return MnsQueue{url, key, secret, q, fn, fn_arg}
+	return MnsQueue{url, key, secret, q, fn, fn_arg, nil}
 }
 
 func createAzureServiceBusAgent(url string, connectionString string, q string) Agent {
@@ -33,6 +33,7 @@ type MnsQueue struct {
 	MnsUrl, AccessKey, AccessSecret, Queue string
 	MsgProcess                             common.Mns_Process
 	ParaProcess                            interface{}
+	queue                                  ali_mns.AliMNSQueue
 }
 
 func (q MnsQueue) InitAgent() {
@@ -42,6 +43,7 @@ func (q MnsQueue) InitAgent() {
 	}
 }
 func (q MnsQueue) MonitorOnAgent() {
+	q.queue = q.initQueue()
 	err := q.listenMessage()
 	if err != nil {
 		logrus.Errorln(err)
@@ -97,9 +99,9 @@ func (q MnsQueue) listenMessage() error {
 	if len(q.MnsUrl) == 0 {
 		return nil
 	}
-	queue := q.initQueue()
+
 	for {
-		if q.MsgProcess(queue, q.ParaProcess) {
+		if q.MsgProcess(q.queue, q.ParaProcess) {
 			break
 		}
 		time.Sleep(1 * time.Second)

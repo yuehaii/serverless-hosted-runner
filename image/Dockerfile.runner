@@ -1,4 +1,4 @@
-FROM artifactory.cloud.ingka-system.cn/ccoecn-docker-virtual/golang:1.21.3 As builder
+FROM artifactory.cloud.ingka-system.cn/ccoecn-docker-virtual/golang:1.24.0 As builder
 
 WORKDIR /go/src/app
 
@@ -13,7 +13,8 @@ RUN echo "machine github.com login ${GIT_ACCESS_TOKEN_USR} password ${GIT_ACCESS
 RUN cd ./src; go env -w GOPRIVATE=github.com/ingka-group-digital/*; go mod download; \
     GOOS=linux CGO_ENABLED=0 GOARCH=amd64 go build -o /go/src/app/bin/runner ./runner/
 
-FROM artifactory.cloud.ingka-system.cn/ccoecn-docker-virtual/ubuntu:22.04  
+# 18.04 --> 24.04 due to latest (3/6/2025) rclone dependency
+FROM artifactory.cloud.ingka-system.cn/ccoecn-docker-virtual/ubuntu:24.04  
 
 ARG DOCKER_USER
 ARG SHR_C_T
@@ -29,6 +30,7 @@ ARG IMAGE_RETRIEVE_SERVER
 ARG SLS_ENC_KEY
 ARG CTX_USERNAME
 ARG CTX_PWD
+ARG SLS_TF_CTL
 # docker paras
 ARG CHANNEL=stable
 ARG DOCKER_VERSION=24.0.7
@@ -36,6 +38,7 @@ ARG DOCKER_COMPOSE_VERSION=v2.23.0
 ARG DUMB_INIT_VERSION=1.2.5
 ARG RUNNER_USER_UID=1001
 ARG DOCKER_GROUP_GID=121
+ARG ei=14
 ENV DEBIAN_FRONTEND=noninteractive
 
 ENV RUNNER_PLATFORM=$RUNNER_PLATFORM
@@ -107,15 +110,18 @@ RUN apt-get update -y \
 WORKDIR /go/bin
 
 COPY --from=builder /go/src/app/bin/runner ./runner
-COPY src/runner/*.sh ./
+COPY src/_depsh ./_depsh
+RUN if [ "$SLS_TF_CTL" = "go" ] ; then rm -rf ./_depsh; fi
+COPY ./src/certs/ca.cert.pem ./certs/
 
-RUN GH_RUNNER_VERSION=${GH_RUNNER_VERSION:-$(curl --silent "https://api.github.com/repos/actions/runner/releases/latest" | grep tag_name | sed -E 's/.*"v([^"]+)".*/\1/')} \
-    && curl -L -O https://github.com/actions/runner/releases/download/v${GH_RUNNER_VERSION}/actions-runner-${RUNNER_PLATFORM}-${GH_RUNNER_VERSION}.tar.gz \
-    && tar -zxf actions-runner-${RUNNER_PLATFORM}-${GH_RUNNER_VERSION}.tar.gz \
+RUN GH_RUNNER_VERSION=${GH_RUNNER_VERSION:-$(curl --silent "https://api.github.com/repos/actions/runner/releases/latest" | grep tag_name | sed -E 's/.*"v([^"]+)".*/\1/')}; \
+    if [ -z $GH_RUNNER_VERSION ] ; then GH_RUNNER_VERSION=2.321.0; fi; \
+    curl -m 900 -L -O https://github.com/actions/runner/releases/download/v${GH_RUNNER_VERSION}/actions-runner-${RUNNER_PLATFORM}-${GH_RUNNER_VERSION}.tar.gz \
+    && tar -zxf actions-runner-${RUNNER_PLATFORM}-${GH_RUNNER_VERSION}.tar.gz > extract_runner.log \
     && rm -f actions-runner-${RUNNER_PLATFORM}-${GH_RUNNER_VERSION}.tar.gz \
     && ./bin/installdependencies.sh \ 
     && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean; chmod +x ./init.sh; chmod +x ./sacrify.sh; echo 200 > /tmp/healthy; \
+    && apt-get clean; chmod +x ./_depsh/init.sh; chmod +x ./_depsh/sacrify.sh; echo 200 > /tmp/healthy; \
     mkdir -p ~/.ssh
 
 USER $DOCKER_USER

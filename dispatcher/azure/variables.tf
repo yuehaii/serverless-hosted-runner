@@ -9,8 +9,6 @@ variable "aci_dispatcher" {
     ports_port          = string 
     protocol            = string 
     org_name            = optional(string)
-    cpu                 = optional(string, "1") 
-    memory              = optional(string, "2")  
   })
 }
 variable "gcp_project" { 
@@ -128,4 +126,20 @@ variable "workspace_id"  {
 variable "workspace_key"  { 
     type=string 
     default="none" 
+}
+variable "dispacher_cpu"  { 
+    type=string 
+    default="1.0" 
+}
+variable "dispacher_memory"  { 
+    type=string 
+    default="2.0" 
+}
+variable "tf_ctl" {
+    type = string
+    default = "cmd"
+}
+variable "oss_mount" {
+    type = string
+    default = ""
 }

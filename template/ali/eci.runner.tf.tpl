@@ -1,10 +1,10 @@
 # with 15 env var
 module "conf" {
-    source = "../module/conf"
+    source = "../module/ali/conf"
 }
 
 module "eci_net" {
-    source = "../module/net"
+    source = "../module/ali/net"
     net_var = {
         sg_name = var.eci_runner.security_group_name
     }
@@ -13,7 +13,7 @@ module "eci_net" {
  
 module "eci_nat" {
     depends_on = [ module.conf, module.eci_net ]
-    source = "../module/nat"
+    source = "../module/ali/nat"
     net_var = {
         vswitch_id = module.eci_net[0].net_vswitch_id
         vpc_id = module.eci_net[0].net_vpc_id 
@@ -23,7 +23,7 @@ module "eci_nat" {
 
 module "${ECI_CONAINER_GROUP_TEMPLATE_NAME}" {
   depends_on = [ module.eci_net, module.eci_nat ]
-  source = "../module/eci"
+  source = "../module/ali/eci"
   eci_group = { 
     name = var.group_name
     image_retrieve_server = var.IMAGE_RETRIEVE_SERVER
@@ -32,7 +32,7 @@ module "${ECI_CONAINER_GROUP_TEMPLATE_NAME}" {
     security_group_id = var.security_group_id == "" ? module.eci_net[0].net_sg_id : var.security_group_id
     vswitch_id = var.vswitch_id == "" ? module.eci_net[0].net_vswitch_id : var.vswitch_id
     cpu  = var.runner_cpu
-    memory = var.runner_memory 
+    memory = var.runner_memory
     add_host_fqdn = var.add_host_fqdn
     add_host_ip = var.add_host_ip
     tags = {

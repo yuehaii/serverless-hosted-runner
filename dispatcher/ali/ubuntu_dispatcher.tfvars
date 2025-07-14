@@ -8,6 +8,4 @@ eci_dispatcher = {
     startup_cmd         = "./dispatcher"
     working_dir         = "/go/bin/"
     protocol            = "http"
-    cpu                 = "2.0" 
-    memory              = "4.0" 
 }

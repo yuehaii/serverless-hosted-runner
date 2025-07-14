@@ -9,7 +9,27 @@ variable "eci_runner" {
     ports_port          = string 
     restart_policy      = string
   })
-}   
+}     
+variable "gcp_vpc" { 
+    type=string 
+    default="none" 
+} 
+variable "gcp_subnet" { 
+    type=string 
+    default="none" 
+} 
+variable "gcp_runner_dind" { 
+    type=string 
+    default="false" 
+} 
+variable "gcp_project_sa_email" { 
+    type=string 
+    default="none" 
+} 
+variable "gcp_project_apikey"  { 
+    type=string 
+    default="none" 
+}
 variable "gcp_project" { 
     type=string 
     default="none" 
@@ -137,4 +157,28 @@ variable "workspace_id"  {
 variable "workspace_key"  { 
     type=string 
     default="none" 
+}
+variable "aci_location"  { 
+    type=string 
+    default="none" 
+}
+variable "aci_sku"  { 
+    type=string 
+    default="Standard" 
+}
+variable "aci_network_type"  { 
+    type=string 
+    default="Public" 
+}
+variable "oss_mount" {
+    type = string
+    default = ""
+}
+variable "cloud_pr" {
+    type = string
+    default = ""
+}
+variable "dis_ip" {
+    type = string
+    default = ""
 }

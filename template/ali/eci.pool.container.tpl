@@ -1,6 +1,6 @@
 
     containers {  
-        name = "${ECI_RUNNER_POOL_CONTAINER_NAME}"
+        name = "${pool_container_name}"
         image = join(":", [var.eci_container.image, var.eci_container.image_ver])
         security_context {
             privileged = var.eci_container.need_privileged
@@ -14,7 +14,7 @@
         }
         environment_vars { 
             key   = var.eci_container.environment_key
-            value = "${CONTAINER_ID}"
+            value = "${container_id}"
         } 
         liveness_probe {
             period_seconds        = local.liveness_probe_period_seconds

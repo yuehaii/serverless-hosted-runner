@@ -37,6 +37,8 @@ function tf::apply::_cmd {
 -var="subnet_ids=$arm_subnet_id" -var="resource_group_name=$arm_resource_group_name" \
 -var="workspace_id=$arm_log_ana_workspace_id" -var="workspace_key=$arm_log_ana_workspace_key" \
 -var="gcp_project=$GOOGLE_PROJECT" -var="gcp_region=$GOOGLE_REGION" \
+-var="gcp_project_sa_email=$GOOGLE_PROJECT_SA_EMAIL" -var="gcp_project_apikey=$GOOGLE_PROJECT_APIKEY" -var="gcp_runner_dind=$GOOGLE_RUNNER_DIND" \
+-var="gcp_vpc=$gcp_vpc" -var="gcp_subnet=$gcp_subnet" \
 -var="add_host_ip=47.76.42.71" -var="add_host_fqdn=serverless.dockerd.com" "$@" \
 -var-file="ubuntu_runner.tfvars" -auto-approve"
    echo $flock_cmd > flock_cmd.log; echo "tf::apply::_cmd flock_cmd: $(common::hide::tfcmd $flock_cmd)"
@@ -62,7 +64,7 @@ function tf::state::check::_ps {
    pushd . ; cd $1; tf::state::refresh; popd; tfstate=$(cat $1/terraform.tfstate)
    # echo "tf::state::check::ps: $tfstate."
    tfstate_type=$(echo $tfstate | jq .resources[0].type)
-   if [[ $tfstate_type == *"alicloud_eci_container_group"* ]]; then
+   if [[ $tfstate_type == *"alicloud_eci_container_group"* || $tfstate_type == *"azurerm_container_group"* || $tfstate_type == *"google_cloud_run"* || $tfstate_type == *"gcp_runner_batch_job_module"* ]]; then
       echo "_ps runner already occupied"; exit 0;
    else 
       echo "_ps runner not created yet, destroyed or canceled."
@@ -74,7 +76,7 @@ function tf::state::check::_tf {
    pushd . ; cd $1; tfstate=$(common::flock "terraform state list"); 
    # tf_f=$(cat ./terraform.tfstate); echo "tf_f: $tf_f." 
    echo "tf::state::check::_tf: $tfstate. "
-   if [[ $tfstate == *"alicloud_eci_container_group"* ]]; then
+   if [[ $tfstate == *"alicloud_eci_container_group"* || $tfstate == *"azurerm_container_group"* || $tfstate == *"google_cloud_run"* || $tfstate == *"gcp_runner_batch_job_module"* ]]; then
       echo "_tf runner already occupied"; exit 0;
    else 
       echo "_tf runner not created yet, destroyed or canceled."      
@@ -87,10 +89,7 @@ function tf::destroy::_occupied {
    terraform destroy -var-file="ubuntu_runner.tfvars" -auto-approve
 }
 
-function tf::remove::_lock {
-    echo "cloud_pr is $cloud_pr"
-    echo "AZ_SUBNET_IDS is $AZ_SUBNET_IDS"
-    echo "AZ_LOG_ANA_WORKSPACE_ID is $AZ_LOG_ANA_WORKSPACE_ID"
+function tf::remove::_lock { 
     if [[ "$cloud_pr" == "azure" ]]; then
       echo "in azure destory"
       common::flock "terraform destroy -var-file=ubuntu_runner.tfvars -var="subnet_ids=$AZ_SUBNET_IDS" -var="workspace_id=$AZ_LOG_ANA_WORKSPACE_ID" -var="workspace_key=$AZ_LOG_ANA_WORKSPACE_KEY" -auto-approve $@"
@@ -116,7 +115,8 @@ function tf::apply {
       tf::apply::_cmd -var="runner_id=$runner_id" \
          -var="runner_repname=$runner_name" -var="runner_orgowner=$runner_owner" &> ./tf_apply.log; \
          apply_code=$?; tf_apply_log=$(cat ./tf_apply.log); echo "tf_apply_log is:"; common::hide::tfstate "$tf_apply_log"; echo "apply_code is : $apply_code";
-   fi 
+   fi
+   tf::response
 }
 
 function tf::cache::init {
@@ -139,9 +139,14 @@ function tf::state::check {
    # TODO: found in allen db integration. 
    #       'terraform state list' return null (high cpu or ali tf provider issue), 
    #       but tf state file recorded. 
-   # workaround : merge tf and ps method  
-   tf::state::check::_ps $1 
-   tf::state::check::_tf $1 
+   # workaround : merge tf and ps method
+   # TODO: if terrform.state dose not exist. it will cause process exist in GCP
+   if [[ -d $1 && -f $1/terraform.tfstate ]]; then
+      tf::state::check::_ps $1 
+      tf::state::check::_tf $1 
+   else
+      echo "tf::state::check, terraform.tfstate not created."
+   fi
 }
 
 function tf::state::refresh {
@@ -162,4 +167,12 @@ function tf::remove {
       tf_r_app=$(cat ./tf_rm.log.retry); common::hide::tfstate "tf_rm.log.retry is ---- $tf_r_app ----"; echo "rm_retry_code is : $rm_retry_code"; }
    [[ $rm_retry_code -ne 0 && $rm_code -ne 0 ]] && { echo "tf::remove failed"; exit 0; }
    
+}
+
+function tf::response {
+   echo "tf::response, cloud_pr is $cloud_pr, GOOGLE_RUNNER_DIND is $GOOGLE_RUNNER_DIND"
+   if [[ "$cloud_pr" == "gcp" && "$GOOGLE_RUNNER_DIND" == "true" ]]; then
+      echo "response code is: $(cat ./http_response_code.log)"
+      echo "response body is: $(cat ./http_response_body.log)"
+   fi
 }

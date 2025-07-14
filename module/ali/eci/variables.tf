@@ -33,7 +33,9 @@ variable eci_container {
       name = string
       image = string 
       image_ver = string
+      dis_ip = optional(string, "")
       cloud_pr = optional(string, "ali")
+      tf_ctl = optional(string, "go")
       ctx_log_level = optional(string, "13")
       container_type = optional(string, "")
       need_privileged = optional(bool, false)
@@ -64,12 +66,33 @@ variable eci_container {
       volume_mount_name_var_run = optional(string, "eci-dockerd-shared-volume-var-run")
       volume_mount_path_var_run = optional(string, "/var/run")
       volume_mount_name_working_dir = optional(string, "working-dir-volume")
-      oss_volume_name = optional(string, "sls-runner-eci-oss-volume") 
-      oss_mount_path = optional(string, "/go/bin/_work") 
-      oss_bucket = optional(string, "serverless-tfstate") 
-      oss_url = optional(string, "oss-cn-shanghai.aliyuncs.com")
-      oss_path = optional(string, "/oss_mount")
-      oss_ram_role = optional(string, "sls-mount-oss")
+      docker_volume_name = optional(string, "empty-docker-vm")
+      docker_volume_type = optional(string, "EmptyDirVolume")
+      docker_mount_path = optional(string, "/var/lib/docker")
     }) 
 }
-   
+
+variable eci_mount { 
+    description = "all eci mount vars"
+    type =  map(object({
+      oss_volume_name = optional(string, "sls-runner-eci-oss-volume") 
+      oss_mount_path = optional(string, "/go/bin/_work")
+      oss_bucket = optional(string, "sls-tf-test") 
+      oss_url = optional(string, "oss-cn-shanghai.aliyuncs.com")
+      oss_path = optional(string, "/sls_mount")
+      oss_ram_role = optional(string, "sls-mount-oss")
+      oss_type = optional(string, "FlexVolume")
+      oss_driver = optional(string, "alicloud/oss")
+    }))
+}
+
+variable eci_init_container { 
+    description = "all eci init container vars"
+    type =  map(object({
+      init_container_name = optional(string, "sls-init-container")
+      init_container_image = optional(string, "artifactory.cloud.ingka-system.cn/ccoecn-docker-virtual/serverless-hosted-dispatcher:test-tf-ctl9")
+      init_container_pullpolicy = optional(string, "IfNotPresent")
+      init_container_cmds = optional(list(string), ["sysctl"])
+      init_container_args = optional(list(string), ["-w","vm.overcommit_ratio=10000","-w","vm.overcommit_memory=2"])
+    }))
+}

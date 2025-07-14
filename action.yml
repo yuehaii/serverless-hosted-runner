@@ -96,6 +96,9 @@ runs:
       if: inputs.op == 'install_dependency'
       continue-on-error: false
       run: |
+        # TODO. workaround the CEN issue
+        echo -e "\nTypes: deb\nURIs: http://mirrors.cloud.aliyuncs.com/ubuntu/\nSuites: noble noble-updates noble-backports\nComponents: main universe restricted multiverse\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n\nTypes: deb\nURIs: http://mirrors.cloud.aliyuncs.com/ubuntu/\nSuites: noble-security\nComponents: main universe restricted multiverse\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n\nTypes: deb\nURIs: http://mirrors.aliyuncs.com/ubuntu/\nSuites: noble noble-updates noble-backports\nComponents: main universe restricted multiverse\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg\n\nTypes: deb\nURIs: http://mirrors.aliyuncs.com/ubuntu/\nSuites: noble-security\nComponents: main universe restricted multiverse\nSigned-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg" >> /etc/apt/sources.list.d/ubuntu.sources
+        cat /etc/apt/sources.list.d/ubuntu.sources
         sudo apt-get update; sudo apt-get -y install make    
         export TF_VER=1.6.5 TF_PLATFORM=amd64
         wget https://releases.hashicorp.com/terraform/${TF_VER}/terraform_${TF_VER}_linux_${TF_PLATFORM}.zip

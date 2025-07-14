@@ -49,6 +49,15 @@ type AllenMsg struct {
 	GcpCredential         string `json:"GcpCredential"`
 	GcpProject            string `json:"GcpProject"`
 	GcpRegion             string `json:"GcpRegion"`
+	GcpSA                 string `json:"GcpSA"`
+	GcpApikey             string `json:"GcpApikey"`
+	GcpDind               string `json:"GcpDind"`
+	GcpVpc                string `json:"GcpVpc"`
+	GcpSubnet             string `json:"GcpSubnet"`
+	ImageVersion          string `json:"ImageVersion"`
+	AciLocation           string `json:"AciLocation"`
+	AciSku                string `json:"AciSku"`
+	AciNetworkType        string `json:"AciNetworkType"`
 }
 
 // pool
@@ -83,6 +92,15 @@ type PoolMsg struct {
 	GcpCredential         string
 	GcpProject            string
 	GcpRegion             string
+	GcpSA                 string
+	GcpApikey             string
+	GcpDind               string
+	GcpVpc                string
+	GcpSubnet             string
+	ImageVersion          string
+	AciLocation           string
+	AciSku                string
+	AciNetworkType        string
 }
 type Mns_Process func(interface{}, interface{}) bool
 
@@ -116,6 +134,15 @@ func (aln AllenMsg) ConvertPoolMsg() PoolMsg {
 	msg.GcpCredential = aln.GcpCredential
 	msg.GcpProject = aln.GcpProject
 	msg.GcpRegion = aln.GcpRegion
+	msg.GcpSA = aln.GcpSA
+	msg.GcpApikey = aln.GcpApikey
+	msg.GcpDind = aln.GcpDind
+	msg.GcpVpc = aln.GcpVpc
+	msg.GcpSubnet = aln.GcpSubnet
+	msg.ImageVersion = aln.ImageVersion
+	msg.AciLocation = aln.AciLocation
+	msg.AciSku = aln.AciSku
+	msg.AciNetworkType = aln.AciNetworkType
 	return msg
 }
 
@@ -490,7 +517,7 @@ type WorkflowJobs struct {
 	} `json:"jobs"`
 }
 type CreateRunner func(string, string, string, string, string, string, []string) string
-type DestroyRunner func(string, string, string, string, string) string
+type DestroyRunner func(string, string, string, string, string, []string, string, string) string
 type ReleaseRunner func(string)
 type ParseRegistration func(PoolMsg)
 type CheckRunner func([]string, string, string, string, string) bool

@@ -24,6 +24,25 @@ function runner::init::dns_server {
     sudo echo "$(echo 'nameserver 10.82.31.69'; echo 'nameserver 10.82.31.116'; cat /etc/resolv.conf)" > /etc/resolv.conf 
 }
 
+function runner::docker:setup { 
+    sudo apt-get update
+    sudo apt-get install ca-certificates curl
+    sudo install -m 0755 -d /etc/apt/keyrings
+    sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+    sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+    # Add the repository to Apt sources:
+    echo \
+    "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+    $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}") stable" | \
+    sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+    sudo apt-get update
+
+    sudo apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+    sudo docker run hello-world
+}
+
 function runner::init::docker_daemon {
     if [ ! -f /etc/docker/daemon.json ]; then
         echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
@@ -45,5 +64,6 @@ function runner::init::docker_daemon {
     done    
 }
 
+# runner::docker:setup
 runner::init::docker_daemon
 runner::init::dns_server

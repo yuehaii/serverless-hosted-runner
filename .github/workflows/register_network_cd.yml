@@ -1,0 +1,164 @@
+name: Network Tenant Registration CD
+on:
+  schedule:
+    - cron: '25 1 * * 1,2,3,4,5'
+    - cron: '25 12 * * 1,2,3,4,5'
+  workflow_dispatch:
+    inputs:
+      env:
+        type: choice
+        description: 'deploy to Production/Dev/Test environment'
+        required: true
+        default: 'Test'
+        options: 
+        - Prod
+        - Test
+        - Dev
+      version:
+        type: string
+        description: 'image version'
+        required: false 
+      registry:
+        description: 'registration'
+        default: 'Lazy'
+        type: choice
+        options:
+        - Lazy
+        - Allen 
+        - Mix 
+        required: false 
+      provider:
+        description: 'cloud provider'
+        default: 'ali'
+        type: choice
+        options:
+        - ali
+        - azure 
+        - gcp 
+        required: false 
+      dis_cpu:
+        description: 'dispacher cpu core'
+        default: '2'
+        type: string
+        required: false 
+      dis_memory:
+        description: 'dispacher memory gb'
+        default: '4'
+        type: string
+        required: false 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+run-name: ${{ github.workflow }} - ${{ inputs.env }} - ${{ inputs.version }} - ${{ inputs.registry }} - ${{ inputs.provider }} - dispacher:${{ inputs.dis_cpu }}core/${{ inputs.dis_memory }}gb
+env:
+  ALICLOUD_REGION: ${{ vars.ALICLOUD_REGION }}
+  TF_VAR_IMAGE_RETRIEVE_USERNAME: ${{ secrets.TF_VAR_IMAGE_RETRIEVE_USERNAME }}
+  TF_VAR_IMAGE_RETRIEVE_PWD: ${{ secrets.TF_VAR_IMAGE_RETRIEVE_PWD }}
+  TF_VAR_IMAGE_RETRIEVE_SERVER: ${{ vars.TF_VAR_IMAGE_RETRIEVE_SERVER }}
+  SLS_ENC_KEY: ${{ secrets.SLS_ENC_KEY }}
+  SLS_GITENT_TK: ${{ secrets.SLS_GITENT_TK }}
+  SLS_GITHUB_TK: ${{ secrets.SLS_GITHUB_TK }}
+  CTX_LOG_LEVEL: ${{ vars.CTX_LOG_LEVEL_NETWORK }}
+  SLS_CLOUD_PR: ${{ inputs.provider }}
+  SLS_TF_CTL: ${{ vars.SLS_TF_CTL_NETWORK }}
+  # dispacher size
+  WF_SLS_DISPACHER_CPU_SIZE_ALI: ${{ inputs.dis_cpu }}.0
+  WF_SLS_DISPACHER_MEM_SIZE_ALI: ${{ inputs.dis_memory }}.0
+  WF_SLS_DISPACHER_CPU_SIZE_AZURE: ${{ inputs.dis_cpu }}.0
+  WF_SLS_DISPACHER_MEM_SIZE_AZURE: ${{ inputs.dis_memory }}.0
+  WF_SLS_DISPACHER_CPU_SIZE_GCP: ${{ inputs.dis_cpu }}.0
+  WF_SLS_DISPACHER_MEM_SIZE_GCP: ${{ inputs.dis_memory }}.Gi
+jobs:
+  deploy:
+    runs-on: serverless-hosted-runner
+    steps:      
+    - name: Checkout Repo
+      uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 #4.17
+    - uses: ./ 
+      name: "Install Dependency"  
+      with:
+        op: "install_dependency"
+    - uses: ./ 
+      name: "Lazy Install to Prod"  
+      if: ${{ (inputs.env == 'Prod') && (inputs.registry == 'Lazy') }}
+      with:
+        op: "lazy_install"  
+        reg: "network"  
+      env: 
+        DISPATCHER_VSWITCH_ID: ${{ vars.NETWORK_DISPATCHER_VSWITCH_ID }}
+        DISPATCHER_SG_ID: ${{ vars.NETWORK_DISPATCHER_SG_ID }}
+        ALICLOUD_ACCESS_KEY: ${{ secrets.NETWORK_ALICLOUD_ACCESS_KEY }}
+        ALICLOUD_SECRET_KEY: ${{ secrets.NETWORK_ALICLOUD_SECRET_KEY }}
+        SLS_CD_ENV: ${{ inputs.env }}
+        BUILD_IMAGE_VER: ${{ inputs.version }}
+    - uses: ./ 
+      name: "Lazy Install to Test"
+      if: inputs.env == 'Test'
+      with:
+        op: "lazy_install"  
+        reg: "network"  
+      env:
+        DISPATCHER_VSWITCH_ID: ${{ vars.TEST_DISPATCHER_VSWITCH_ID }}
+        DISPATCHER_SG_ID: ${{ vars.TEST_DISPATCHER_SG_ID }}
+        ALICLOUD_ACCESS_KEY: ${{ secrets.TEST_ALICLOUD_ACCESS_KEY }}
+        ALICLOUD_SECRET_KEY: ${{ secrets.TEST_ALICLOUD_SECRET_KEY }}
+        SLS_CD_ENV: ${{ inputs.env }}
+        BUILD_IMAGE_VER: ${{ inputs.version }} 
+    - uses: ./ 
+      name: "Allen Install to Prod"  
+      if: ${{ (inputs.env == 'Prod') && (inputs.registry == 'Allen') }}
+      with:
+        op: "allen_install"  
+        reg: "allen"
+      env: 
+        DISPATCHER_VSWITCH_ID: ${{ vars.NETWORK_DISPATCHER_VSWITCH_ID }}
+        DISPATCHER_SG_ID: ${{ vars.NETWORK_DISPATCHER_SG_ID }}
+        ALICLOUD_ACCESS_KEY: ${{ secrets.NETWORK_ALICLOUD_ACCESS_KEY }}
+        ALICLOUD_SECRET_KEY: ${{ secrets.NETWORK_ALICLOUD_SECRET_KEY }}
+        SLS_CD_ENV: ${{ inputs.env }}
+        BUILD_IMAGE_VER: ${{ inputs.version }}
+    - uses: ./ 
+      name: "Mix Install to Prod"  
+      if: ${{ (inputs.env == 'Prod') && (inputs.registry == 'Mix') }}
+      with:
+        op: "mix_install" 
+        reg: "network"
+      env: 
+        DISPATCHER_VSWITCH_ID: ${{ vars.NETWORK_DISPATCHER_VSWITCH_ID }}
+        DISPATCHER_SG_ID: ${{ vars.NETWORK_DISPATCHER_SG_ID }}
+        ALICLOUD_ACCESS_KEY: ${{ secrets.NETWORK_ALICLOUD_ACCESS_KEY }}
+        ALICLOUD_SECRET_KEY: ${{ secrets.NETWORK_ALICLOUD_SECRET_KEY }}
+        SLS_CD_ENV: ${{ inputs.env }}
+        BUILD_IMAGE_VER: ${{ inputs.version }}
+    - uses: ./ 
+      name: "Scale Up on Working hours"  
+      if: github.event.schedule == '25 1 * * 1,2,3,4,5'
+      env:
+        BUILD_IMAGE_VER: ${{ vars.SCHEDULE_BUILD_IMAGE_VER_NETWORK }}
+        WF_SLS_DISPACHER_CPU_SIZE_ALI: 2.0
+        WF_SLS_DISPACHER_MEM_SIZE_ALI: 4.0
+        DISPATCHER_VSWITCH_ID: ${{ vars.NETWORK_DISPATCHER_VSWITCH_ID }}
+        DISPATCHER_SG_ID: ${{ vars.NETWORK_DISPATCHER_SG_ID }}
+        ALICLOUD_ACCESS_KEY: ${{ secrets.NETWORK_ALICLOUD_ACCESS_KEY }}
+        ALICLOUD_SECRET_KEY: ${{ secrets.NETWORK_ALICLOUD_SECRET_KEY }}
+        SLS_CD_ENV: Prod
+        SLS_CLOUD_PR: ali
+      with:
+        op: "lazy_install"  
+        reg: "network"
+    - uses: ./ 
+      name: "Scale Down on None-working hours"  
+      if: github.event.schedule == '25 12 * * 1,2,3,4,5'
+      env:
+        BUILD_IMAGE_VER: ${{ vars.SCHEDULE_BUILD_IMAGE_VER_NETWORK }}
+        WF_SLS_DISPACHER_CPU_SIZE_ALI: ${{ vars.SCHEDULE_DISPACHER_CPU_SIZE_ALI_NETWORK }}
+        WF_SLS_DISPACHER_MEM_SIZE_ALI: ${{ vars.SCHEDULE_DISPACHER_MEM_SIZE_ALI_NETWORK }}
+        DISPATCHER_VSWITCH_ID: ${{ vars.NETWORK_DISPATCHER_VSWITCH_ID }}
+        DISPATCHER_SG_ID: ${{ vars.NETWORK_DISPATCHER_SG_ID }}
+        ALICLOUD_ACCESS_KEY: ${{ secrets.NETWORK_ALICLOUD_ACCESS_KEY }}
+        ALICLOUD_SECRET_KEY: ${{ secrets.NETWORK_ALICLOUD_SECRET_KEY }}
+        SLS_CD_ENV: Prod
+        SLS_CLOUD_PR: ali
+      with:
+        op: "lazy_install"  
+        reg: "network"

@@ -1,13 +1,12 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"os/signal"
 	agent "serverless-hosted-runner/agent"
 	"syscall"
 
-	"github.com/alecthomas/kingpin/v2"
+	kingpin "github.com/alecthomas/kingpin/v2"
 	"github.com/ingka-group-digital/app-monitor-agent/logrus"
 )
 
@@ -25,6 +24,8 @@ var (
 	image_ver         = kingpin.Flag("image_ver", "runner image version.").Short('v').String()
 	ctx_log_level     = kingpin.Flag("ctx_log_level", "context log level.").Short('m').String()
 	event_push        = kingpin.Flag("push_enable", "git webhook push enable.").Default("false").Short('w').Bool()
+	cloud_pr          = kingpin.Flag("cloud_pr", "cloud provider.").Short('c').String()
+	dis_ip            = kingpin.Flag("dis_ip", "dispacher ip.").Short('d').String()
 )
 
 func main() {
@@ -33,15 +34,15 @@ func main() {
 
 	runner := EciRunnerCreator(*container_type, *runner_id, *runner_token, *runner_repo_url,
 		*runner_org, *runner_repo_name, *runner_action, *runner_repo_owner, *image_ver,
-		*runner_labels, *runner_group)
+		*runner_labels, *runner_group, *cloud_pr, *dis_ip)
 	runner.Init()
 	runner.Configure()
-
-	fmt.Println("Starting runner...")
-	_ = runner.Start()
+	if err := runner.Start(); err != nil {
+		logrus.Errorf("fail to start runner, %v", err)
+	}
 
 	if *event_push {
-		fmt.Println("Monitoring state...")
+		logrus.Infof("Monitoring state...")
 		qAgent := agent.CreateAliMNSAgent(os.Getenv("TF_VAR_MNS_URL"), os.Getenv("ALICLOUD_ACCESS_KEY"),
 			os.Getenv("ALICLOUD_SECRET_KEY"), agent.NOTIFICATION_Q, runner.Monitor, runner.Info())
 		qAgent.MonitorOnAgent()
