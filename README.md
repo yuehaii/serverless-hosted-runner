@@ -1,6 +1,6 @@
 # Serverless-hosted-runner
 
-[![Go Report Card](https://goreportcard.com/badge/yuehaii/serverless-hosted-runner "Go Report Card")](https://goreportcard.com/report/yuehaii/serverless-hosted-runner)
+[![Go Report Card](https://goreportcard.com/badge/yuehaii/serverless-hosted-runner/src "Go Report Card")](https://goreportcard.com/report/yuehaii/serverless-hosted-runner/src)
 [![CodeQL](https://github.com/ingka-group-digital/serverless-hosted-runner/actions/workflows/_codeql.yml/badge.svg)](https://github.com/ingka-group-digital/serverless-hosted-runner/actions/workflows/_codeql.yml)
 [![Lint](https://github.com/ingka-group-digital/serverless-hosted-runner/actions/workflows/_linter.yml/badge.svg)](https://github.com/ingka-group-digital/serverless-hosted-runner/actions/workflows/_linter.yml)
 
