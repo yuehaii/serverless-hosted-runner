@@ -12,10 +12,10 @@ message RunnerState {
     string state = 2;
     string stateMsg = 3;
     string act = 4;
-    string runer_name = 5;
-    string repo_name = 6;
-    string org_name = 7;
-    string run_wf = 8;
+    string runerName = 5;
+    string repoName = 6;
+    string orgName = 7;
+    string runWf = 8;
     string labels = 9;
     string url = 10;
     string owner = 11;

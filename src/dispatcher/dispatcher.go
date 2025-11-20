@@ -1,4 +1,5 @@
-package main
+// Package dispatcher of micro service dispatcher
+package dispatcher
 
 import (
 	"encoding/json"
@@ -27,25 +28,34 @@ type Dispatcher interface {
 }
 
 type EciDispatcher struct {
-	cur_path            string
-	pool_prefix         string
-	interval            int64
-	image_ver           string
-	lazy_regs           string
-	default_labels      []string
-	allen_regs          string
-	sys_ctl             common.IUnixSysCtl
-	crypt_ctl           common.Cryptography
-	customized_resolver bool
-	check_connectivity  bool
-	dis_addr            string
-	r_competition       bool
+	curPath            string
+	poolPrefix         string
+	interval           int64
+	imageVer           string
+	lazyRegs           string
+	defaultLabels      []string
+	allenRegs          string
+	sysCtl             common.IUnixSysCtl
+	cryptCtl           common.Cryptography
+	customizedResolver bool
+	checkConnectivity  bool
+	disAddr            string
+	rCompetition       bool
+	evenProxyEnable    bool
+	gitAgent           agent.IGit
+	ctxLogLevel        string
+	poolMode           bool
+	cloudPr            string
+	eventPush          bool
+	tfCtl              string
 }
 
-func EciDispatcherConstruct(image_ver string, lazy_regs string, allen_regs string) Dispatcher {
-	return &EciDispatcher{"/go/bin/", agent.NOTIFICATION_Q, int64(10), image_ver,
-		lazy_regs, []string{"serverless-hosted-runner", "eci-runner"}, allen_regs,
-		common.CreateUnixSysCtl(), common.DefaultCryptography(""), false, false, "", true}
+func EciDispatcherConstruct(imageVer string, lazyRegs string, allenRegs string,
+	ctxLogLevel string, poolMode bool, cloudPr string, eventPush bool, tfCtl string) Dispatcher {
+	return &EciDispatcher{"/go/bin/", agent.NotificationQueue, int64(10), imageVer,
+		lazyRegs, []string{"serverless-hosted-runner", "eci-runner"}, allenRegs,
+		common.CreateUnixSysCtl(), common.DefaultCryptography(""), false, false, "",
+		true, true, agent.CreateGitAgent(), ctxLogLevel, poolMode, cloudPr, eventPush, tfCtl}
 }
 
 func FnDispatcherConstruct() Dispatcher {
@@ -53,33 +63,34 @@ func FnDispatcherConstruct() Dispatcher {
 }
 
 func (dis EciDispatcher) responseBack(w http.ResponseWriter, msg string, logstr string, status int) {
-	logrus.Infof(logstr)
+	logrus.Info(logstr)
 	w.WriteHeader(status)
 	w.Header().Add("Content-Type", "text/plain")
-	w.Write([]byte(msg))
+	if _, err := w.Write([]byte(msg)); err != nil {
+		logrus.Errorf("fail to write response back, %v", err)
+	}
 }
 
 func (dis EciDispatcher) parseRegistration(item common.PoolMsg) {
 	logrus.Infof("parseRegistration, Repos: %s", item.Repos)
 	repos := strings.Split(item.Repos, ",")
-	url := item.Url
+	url := item.URL
 	for _, r := range repos {
 		if len(r) > 0 {
 			item.Type = "Repo"
 			item.Name = r
-			item.Url = url + "/" + r
+			item.URL = url + "/" + r
 			logrus.Infof("parseRegistration, item.Name: %s", item.Name)
-
 			store := common.EnvStore(&item, item.Name, r)
 			store.Save()
-			key, runner_type := store.GetKey()
-			pat, pat_type := store.GetPat()
-			labels, label_type := store.GetLabels()
-			logrus.Infof("parseRegistration, key: %s, pat: %s, labels: %s, runner_type %s, pat_type %s, label_type %s",
-				key, pat, labels, runner_type, pat_type, label_type)
+			key, runnerType := store.GetKey()
+			pat, patType := store.GetPat()
+			labels, labelType := store.GetLabels()
+			logrus.Infof("parseRegistration, key: %s, pat: %s, labels: %s, runnerType %s, patType %s, labelType %s",
+				key, pat, labels, runnerType, patType, labelType)
 
 			iv, _ := strconv.Atoi(item.PullInterval)
-			wf := agent.CreateWorkflowAgent(item.Type, item.Name, item.Url, dis.createRunner,
+			wf := agent.CreateWorkflowAgent(item.Type, item.Name, item.URL, dis.createRunner,
 				dis.removeRunner, dis.notifyRelease, dis.checkLabels, r, item.Name, iv, labels)
 			wf.InitAgent()
 			wf.MonitorOnAgent()
@@ -89,13 +100,20 @@ func (dis EciDispatcher) parseRegistration(item common.PoolMsg) {
 }
 
 func (dis EciDispatcher) lazyRegistration() {
-	logrus.Infof("lazyRegistration start. lazy_regs: %s", dis.lazy_regs)
-	arr_lazy_regs := []common.PoolMsg{}
-	_ = json.Unmarshal([]byte(dis.lazy_regs), &arr_lazy_regs)
-	if len(arr_lazy_regs) > 0 {
-		for _, item := range arr_lazy_regs {
+	logrus.Infof("lazyRegistration start. lazyRegs: %s", dis.lazyRegs)
+	arrLazyRegs := []common.PoolMsg{}
+	_ = json.Unmarshal([]byte(dis.lazyRegs), &arrLazyRegs)
+	if len(arrLazyRegs) > 0 {
+		for _, item := range arrLazyRegs {
 			dis.parseRegistration(item)
 		}
+	}
+	if dis.evenProxyEnable {
+		eAgent := agent.CreateKafkaEventAgent(dis.createRunner, dis.removeRunner,
+			os.Getenv("KAFKA_INS_USERNAME"), os.Getenv("KAFKA_INS_PWD"), os.Getenv("KAFKA_INS_ENDPOINT"),
+			os.Getenv("KAFKA_INS_TOPIC"), os.Getenv("KAFKA_INS_CONSUMER"),
+			arrLazyRegs)
+		eAgent.MonitorOnAgent()
 	}
 }
 
@@ -107,31 +125,31 @@ func (dis EciDispatcher) allenRegistration() {
 }
 
 func (dis *EciDispatcher) Init() {
-	dis.dis_addr = dis.sys_ctl.Addr()
-	if dis.customized_resolver {
-		go dis.sys_ctl.SetResolvers()
+	dis.disAddr = dis.sysCtl.Addr()
+	if dis.customizedResolver {
+		go dis.sysCtl.SetResolvers()
 	}
-	if dis.check_connectivity {
-		go dis.sys_ctl.NetworkConnectivity()
+	if dis.checkConnectivity {
+		go dis.sysCtl.NetworkConnectivity()
 	}
-	lis := listener.CreateListener(dis.removeRunner, dis.dis_addr)
+	lis := listener.CreateListener(dis.removeRunner, dis.disAddr)
 	go lis.Start()
 }
 
 func (dis EciDispatcher) Refresh() {
 	logrus.Infof("refresh pool start")
-	common.SetContextLogLevel(*ctx_log_level)
+	common.SetContextLogLevel(dis.ctxLogLevel)
 
-	if dis.lazy_regs != "" && dis.lazy_regs != "none" {
+	if dis.lazyRegs != "" && dis.lazyRegs != "none" {
 		go dis.lazyRegistration()
 	}
-	if dis.allen_regs == "allen" {
+	if dis.allenRegs == "allen" {
 		go dis.allenRegistration()
 	}
 
-	if *pool_mode {
+	if dis.poolMode {
 		qAgent := agent.CreateAliMNSAgent(os.Getenv("TF_VAR_MNS_URL"), os.Getenv("ALICLOUD_ACCESS_KEY"),
-			os.Getenv("ALICLOUD_SECRET_KEY"), agent.DEFAULT_POOL_Q, dis.checkMsg, nil)
+			os.Getenv("ALICLOUD_SECRET_KEY"), agent.DefaultPoolQueue, dis.checkMsg, nil)
 		qAgent.MonitorOnAgent()
 	}
 }
@@ -151,16 +169,16 @@ func (dis EciDispatcher) updatePool(msg common.PoolMsg, store common.Store) {
 	} else if msg.Type == "Pool" && msg.Name != "" && msg.Pat != "null" && store.AnyChange() {
 		logrus.Infof("release/recreate pool, name: %s, num: %d", msg.Name, num)
 		dis.releasePool(msg.Name, num) // upinsert
-		out, err := exec.Command("/bin/bash", dis.cur_path+"create_runner.sh", "create_pool",
-			dis.pool_prefix+"-"+msg.Name, msg.Size, msg.Name, msg.Url, msg.Pat, dis.image_ver,
-			msg.Key, msg.Secret, msg.Region, msg.SecGpId, msg.VSwitchId, "pool", msg.Cpu,
+		out, err := exec.Command("/bin/bash", dis.curPath+"create_runner.sh", "create_pool",
+			dis.poolPrefix+"-"+msg.Name, msg.Size, msg.Name, msg.URL, msg.Pat, dis.imageVer,
+			msg.Key, msg.Secret, msg.Region, msg.SecGpID, msg.VSwitchID, "pool", msg.CPU,
 			msg.Memory, common.Ternary(msg.Labels == "", "none", msg.Labels).(string),
 			common.Ternary(msg.ChargeLabels == "", "none", msg.ChargeLabels).(string),
 			common.Ternary(msg.RunnerGroup == "", "default", msg.RunnerGroup).(string),
-			*ctx_log_level, *cloud_pr,
-			msg.ArmClientId, msg.ArmClientSecret, msg.ArmSubscriptionId, msg.ArmTenantId,
-			msg.ArmEnvironment, msg.ArmRPRegistration, msg.ArmResourceGroupName, msg.ArmSubnetId,
-			msg.ArmLogAnaWorkspaceId, msg.ArmLogAnaWorkspaceKey,
+			dis.ctxLogLevel, dis.cloudPr,
+			msg.ArmClientID, msg.ArmClientSecret, msg.ArmSubscriptionID, msg.ArmTenantID,
+			msg.ArmEnvironment, msg.ArmRPRegistration, msg.ArmResourceGroupName, msg.ArmSubnetID,
+			msg.ArmLogAnaWorkspaceID, msg.ArmLogAnaWorkspaceKey,
 			msg.GcpCredential, msg.GcpProject, msg.GcpRegion, msg.GcpSA, msg.GcpApikey, msg.GcpDind,
 			msg.GcpVpc, msg.GcpSubnet).Output()
 		if err != nil {
@@ -171,21 +189,21 @@ func (dis EciDispatcher) updatePool(msg common.PoolMsg, store common.Store) {
 }
 
 func (dis EciDispatcher) notifyRelease(msg string) {
-	if *event_push {
+	if dis.eventPush {
 		qAgent := agent.CreateAliMNSAgent(os.Getenv("TF_VAR_MNS_URL"), os.Getenv("ALICLOUD_ACCESS_KEY"),
-			os.Getenv("ALICLOUD_SECRET_KEY"), agent.NOTIFICATION_Q, nil, nil)
+			os.Getenv("ALICLOUD_SECRET_KEY"), agent.NotificationQueue, nil, nil)
 		qAgent.NotifyAgent(msg)
 		logrus.Infof("notifyRelease msg: %s", msg)
 	}
 }
 
-func (dis EciDispatcher) releasePool(org_name string, num int) {
-	p_name := dis.pool_prefix + "-" + org_name
+func (dis EciDispatcher) releasePool(orgName string, num int) {
+	pName := dis.poolPrefix + "-" + orgName
 	for id := 1; id <= num; id++ {
-		dis.notifyRelease(p_name + "-" + strconv.Itoa(id))
+		dis.notifyRelease(pName + "-" + strconv.Itoa(id))
 	}
 	fmt.Printf("release pool. output - %s\n",
-		dis.removeRunner("pool_completed", p_name, "", org_name, p_name, []string{}, "", ""))
+		dis.removeRunner("pool_completed", pName, "", orgName, pName, []string{}, "", ""))
 }
 
 func (dis EciDispatcher) msgInvisible(t string) int64 {
@@ -202,10 +220,12 @@ func (dis EciDispatcher) checkMsg(obj interface{}, para interface{}) bool {
 		case resp := <-respChan:
 			{
 				msg := common.PoolMsg{}
-				json.Unmarshal([]byte(resp.MessageBody), &msg)
-				fmt.Println("Unmarshal data, ", msg.Type, msg.Name, msg.Pat, msg.Url, msg.Size, msg.Key,
-					msg.Secret, msg.Region, msg.SecGpId, msg.VSwitchId,
-					msg.Cpu, msg.Memory)
+				if err := json.Unmarshal([]byte(resp.MessageBody), &msg); err != nil {
+					logrus.Errorln(err)
+				}
+				fmt.Println("Unmarshal data, ", msg.Type, msg.Name, msg.Pat, msg.URL, msg.Size, msg.Key,
+					msg.Secret, msg.Region, msg.SecGpID, msg.VSwitchID,
+					msg.CPU, msg.Memory)
 				if ret, e := q.ChangeMessageVisibility(resp.ReceiptHandle, dis.msgInvisible(msg.Type)); e != nil {
 					fmt.Println("visibility error", e)
 				} else {
@@ -218,7 +238,7 @@ func (dis EciDispatcher) checkMsg(obj interface{}, para interface{}) bool {
 					go dis.updatePool(msg, store)
 					if msg.Type == "Repo" {
 						iv, _ := strconv.Atoi(msg.PullInterval)
-						wf := agent.CreateWorkflowAgent(msg.Type, msg.Name, msg.Url, dis.createRunner,
+						wf := agent.CreateWorkflowAgent(msg.Type, msg.Name, msg.URL, dis.createRunner,
 							dis.removeRunner, dis.notifyRelease, dis.checkLabels, "", "", iv, msg.Labels)
 						wf.InitAgent()
 						wf.MonitorOnAgent()
@@ -247,70 +267,72 @@ func (dis EciDispatcher) HandleEvents(w http.ResponseWriter, req *http.Request) 
 		dis.responseBack(w, "Event Parsing Error:", "Parsing event body error.", http.StatusBadRequest)
 		return
 	}
-	github_event := req.Header["X-Github-Event"][0]
-	if github_event != "workflow_job" && github_event != "ping" {
+	githubEvent := req.Header["X-Github-Event"][0]
+	if githubEvent != "workflow_job" && githubEvent != "ping" {
 		dis.responseBack(w, "Unsupported Event", "Request is not workflow_job or ping event.", http.StatusBadRequest)
 		return
-	} else if github_event == "ping" {
+	} else if githubEvent == "ping" {
 		dis.responseBack(w, "Ping Finish", "The dispatcher running normally.", http.StatusOK)
 		return
 	}
 
-	event_data := EventBody{}
-	json.Unmarshal([]byte(body), &event_data)
-	org_name := event_data.Organization.Login
-	if org_name == "" {
-		org_name = event_data.Sender.Login
+	eventData := common.EventBody{}
+	if err := json.Unmarshal([]byte(body), &eventData); err != nil {
+		logrus.Errorf("Dispacher handle event, fail to unmarshal event: %v", err)
 	}
-	repo_name := event_data.Repository.Name
-	if event_data.Action == "queued" {
+	orgName := eventData.Organization.Login
+	if orgName == "" {
+		orgName = eventData.Sender.Login
+	}
+	repoName := eventData.Repository.Name
+	if eventData.Action == "queued" {
 		logrus.Infof("Checking queued condition...")
 		fmt.Printf("create a new runner. output - %s\n",
-			dis.createRunner(event_data.Action,
-				strconv.FormatInt(event_data.WorkflowJob.RunID, 10)+"-"+strconv.FormatInt(event_data.WorkflowJob.ID, 10),
-				repo_name, event_data.Repository.HTMLURL, org_name,
-				event_data.Repository.Owner.Login, event_data.WorkflowJob.Labels))
-	} else if event_data.Action == "completed" && event_data.WorkflowJob.RunnerID > 0 {
+			dis.createRunner(eventData.Action,
+				strconv.FormatInt(eventData.WorkflowJob.RunID, 10)+"-"+strconv.FormatInt(eventData.WorkflowJob.ID, 10),
+				repoName, eventData.Repository.HTMLURL, orgName,
+				eventData.Repository.Owner.Login, eventData.WorkflowJob.Labels))
+	} else if eventData.Action == "completed" && eventData.WorkflowJob.RunnerID > 0 {
 		logrus.Infof("Checking completed condition...")
-		dis.notifyRelease(event_data.WorkflowJob.RunnerName)
-		if !strings.Contains(event_data.WorkflowJob.RunnerName, dis.pool_prefix) {
+		dis.notifyRelease(eventData.WorkflowJob.RunnerName)
+		if !strings.Contains(eventData.WorkflowJob.RunnerName, dis.poolPrefix) {
 			fmt.Printf("remove a runner. output - %s\n",
-				dis.removeRunner(event_data.Action, event_data.WorkflowJob.RunnerName, repo_name, org_name,
-					strconv.FormatInt(event_data.WorkflowJob.RunID, 10)+"-"+strconv.FormatInt(event_data.WorkflowJob.ID, 10),
-					event_data.WorkflowJob.Labels, event_data.Repository.HTMLURL, event_data.Repository.Owner.Login))
+				dis.removeRunner(eventData.Action, eventData.WorkflowJob.RunnerName, repoName, orgName,
+					strconv.FormatInt(eventData.WorkflowJob.RunID, 10)+"-"+strconv.FormatInt(eventData.WorkflowJob.ID, 10),
+					eventData.WorkflowJob.Labels, eventData.Repository.HTMLURL, eventData.Repository.Owner.Login))
 		}
 	} else {
-		fmt.Printf("skip the action - %s\n", event_data.Action)
+		fmt.Printf("skip the action - %s\n", eventData.Action)
 	}
 	dis.responseBack(w, "Exist dispatcher.", "The dispatcher event handle finished.", http.StatusOK)
 }
 
-func (dis EciDispatcher) checkLabels(labels []string, repo_name string,
-	org_name string, runner_type string, specific_labels string) bool {
+func (dis EciDispatcher) checkLabels(labels []string, repoName string,
+	orgName string, runnerType string, specificLabels string) bool {
 	for idx, item := range labels {
 		logrus.Infof("#%d label: %s", idx, item)
 		if strings.Contains(item, ",") {
-			item_arr := strings.Split(strings.TrimSpace(item), ",")
-			labels = append(labels, item_arr...)
+			itemArr := strings.Split(strings.TrimSpace(item), ",")
+			labels = append(labels, itemArr...)
 		}
 	}
-	logrus.Infof("checkLabels. repo_name: %s, org_name: %s, runner_type: %s, specific_labels: %s",
-		repo_name, org_name, runner_type, specific_labels)
-	if (slices.Contains(labels, repo_name) && strings.EqualFold(runner_type, "repo")) ||
-		(slices.Contains(labels, org_name) && strings.EqualFold(runner_type, "org")) {
+	logrus.Infof("checkLabels. repoName: %s, orgName: %s, runnerType: %s, specificLabels: %s",
+		repoName, orgName, runnerType, specificLabels)
+	if (slices.Contains(labels, repoName) && strings.EqualFold(runnerType, "repo")) ||
+		(slices.Contains(labels, orgName) && strings.EqualFold(runnerType, "org")) {
 		logrus.Warnf("wf label contains repo/org name. permit.")
 		return true
 	}
-	if len(specific_labels) > 0 {
-		specific_labels_arr := strings.Split(specific_labels, ",")
-		for _, val := range specific_labels_arr {
+	if len(specificLabels) > 0 {
+		specificLabelsArr := strings.Split(specificLabels, ",")
+		for _, val := range specificLabelsArr {
 			if slices.Contains(labels, strings.TrimSpace(val)) {
 				logrus.Warnf("wf label contains customized label. permit.")
 				return true
 			}
 		}
 	}
-	for _, val := range dis.default_labels {
+	for _, val := range dis.defaultLabels {
 		logrus.Infof("#default label: %s", strings.TrimSpace(val))
 		if slices.Contains(labels, strings.TrimSpace(val)) {
 			logrus.Warnf("wf label contains default label. permit.")
@@ -322,166 +344,170 @@ func (dis EciDispatcher) checkLabels(labels []string, repo_name string,
 }
 
 // cpu-1.0, memory-2.0
-func (dis EciDispatcher) checkDynamicLabels(labels []string, old_cpu *string,
-	old_memory *string, old_vsw *string, old_sg *string, old_img *string, large_disk *string) string {
-	cpu, memory, vsw, sg, target_label, img, bucket := "", "", "", "", "", "", ""
+func (dis EciDispatcher) checkDynamicLabels(labels []string, oldCPU *string,
+	oldMemory *string, oldVsw *string, oldSg *string, oldImg *string, largeDisk *string) string {
+	cpu, memory, vsw, sg, targetLabel, img, bucket := "", "", "", "", "", "", ""
 	for _, label := range labels {
 		if strings.Contains(label, "cpu-") {
 			cpu = strings.ReplaceAll(label, "cpu-", "")
-			target_label += "," + label
+			targetLabel += "," + label
 		} else if strings.Contains(label, "memory-") {
 			memory = strings.ReplaceAll(label, "memory-", "")
-			target_label += "," + label
+			targetLabel += "," + label
 		} else if strings.Contains(label, "vsw-") {
 			vsw = label
-			target_label += "," + label
+			targetLabel += "," + label
 		} else if strings.Contains(label, "sg-") {
 			sg = label
-			target_label += "," + label
+			targetLabel += "," + label
 		} else if strings.Contains(label, "img-") {
 			img = strings.ReplaceAll(label, "img-", "")
-			target_label += "," + label
+			targetLabel += "," + label
 		} else if strings.Contains(label, "sid-") {
-			target_label += "," + label
+			targetLabel += "," + label
 		} else if strings.Contains(label, "disk-") {
 			bucket = strings.ReplaceAll(label, "disk-", "")
-			target_label += "," + label
+			targetLabel += "," + label
 		}
 	}
 	if len(cpu) > 0 && len(memory) > 0 {
-		*old_cpu = cpu
-		*old_memory = memory
+		*oldCPU = cpu
+		*oldMemory = memory
 	}
 	if len(vsw) > 4 && len(sg) > 3 {
-		*old_vsw = vsw
-		*old_sg = sg
+		*oldVsw = vsw
+		*oldSg = sg
 	}
 	if len(img) > 0 {
-		*old_img = img
+		*oldImg = img
 	}
 	if len(bucket) > 0 {
-		*large_disk = bucket
+		*largeDisk = bucket
 	}
-	logrus.Infof("checkDynamicLabels. old_cpu:%s, old_memory:%s, cpu:%s, memory:%s, old_vsw:%s, old_sg:%s, vsw:%s, sg:%s, img:%s, target_label:%s, bucket:%s",
-		*old_cpu, *old_memory, cpu, memory, *old_vsw, *old_sg, vsw, sg, img, target_label, bucket)
-	return target_label
+	logrus.Infof("checkDynamicLabels. oldCPU:%s, oldMemory:%s, cpu:%s, memory:%s, oldVsw:%s, oldSg:%s, vsw:%s, sg:%s, img:%s, targetLabel:%s, bucket:%s",
+		*oldCPU, *oldMemory, cpu, memory, *oldVsw, *oldSg, vsw, sg, img, targetLabel, bucket)
+	return targetLabel
 }
 
-func (dis EciDispatcher) runnerInfoVerification(store common.Store, labels []string, repo_name, org_name string) (bool, string) {
-	key, runner_type := store.GetKey()
+func (dis EciDispatcher) runnerInfoVerification(store common.Store, labels []string, repoName, orgName string) (bool, string) {
+	key, runnerType := store.GetKey()
 	pat, _ := store.GetPat()
-	specific_labels, _ := store.GetLabels()
+	specificLabels, _ := store.GetLabels()
 
-	if len(key) <= 0 || len(runner_type) <= 0 || pat == "null" {
-		return false, fmt.Sprint("org and repo token not exist. please run the 'register serverless runner' workflow first."+
-			"Skip the runner creation. key: %s, type: %s, pat: %s", key, runner_type, pat)
-	} else if runner_type == "pool" {
+	if len(key) <= 0 || len(runnerType) <= 0 || pat == "null" {
+		return false, "org and repo token not exist, skip creation. key:" + key + ",type:" + runnerType + ",pat:" + pat
+	} else if runnerType == "pool" {
 		return false, "pool should not be created here. skip it."
-	} else if !dis.checkLabels(labels, repo_name, org_name, runner_type, specific_labels) {
-		return false, "wf lablel dose not specify the repo/org name or runner label:" + specific_labels
+	} else if !dis.checkLabels(labels, repoName, orgName, runnerType, specificLabels) {
+		return false, "wf lablel dose not specify the repo/org name or runner label:" + specificLabels
 	}
 	return true, "runner info verification pass."
 }
 
-func (dis EciDispatcher) createRunner(act string, runer_id string, repo_name string,
-	repo_url string, org_name string, owner_name string, labels []string) string {
-	store := common.EnvStore(nil, org_name, repo_name)
-	if verified, inf := dis.runnerInfoVerification(store, labels, repo_name, org_name); !verified {
-		logrus.Warnf("fail to verify runner information. " + inf)
+func (dis EciDispatcher) createRunner(act string, runnerID string, repoName string,
+	repoURL string, orgName string, ownerName string, labels []string) string {
+	store := common.EnvStore(nil, orgName, repoName)
+	if verified, inf := dis.runnerInfoVerification(store, labels, repoName, orgName); !verified {
+		logrus.Warnf("fail to verify runner information %s", inf)
 		return "fail to verify runner information. " + inf
 	}
-	if *tf_ctl == "go" {
-		itf_ctl, err_tf, msg := dis.createRunnerTfCtl(store, act, runer_id, repo_name, repo_url, org_name, owner_name, labels)
-		if err_tf != nil && itf_ctl != nil {
-			tf_err_msg := err_tf.Error()
-			is_file_busy := dis.sys_ctl.IsFileBusy(tf_err_msg)
-			is_sys_busy := dis.sys_ctl.IsSysBusy(tf_err_msg)
-			logrus.Warnf("tf gen error message is %s, is_file_busy %v, is_sys_busy %v",
-				tf_err_msg, is_file_busy, is_sys_busy)
-			if err := itf_ctl.MarkAsFinish("gen", is_sys_busy || is_file_busy); err != nil {
-				logrus.Errorf("fail to mark gen as finish: %v, tf err:%v", err, err_tf)
-				return err.Error() + msg + tf_err_msg
+	if dis.tfCtl == "go" {
+		itfCtl, msg, errTf := dis.createRunnerTfCtl(store, act, runnerID, repoName, repoURL, orgName, ownerName, labels)
+		if errTf != nil && itfCtl != nil {
+			tfErrMsg := errTf.Error()
+			isFileBusy := dis.sysCtl.IsFileBusy(tfErrMsg)
+			isSysBusy := dis.sysCtl.IsSysBusy(tfErrMsg)
+			logrus.Warnf("tf gen error message is %s, isFileBusy %v, isSysBusy %v",
+				tfErrMsg, isFileBusy, isSysBusy)
+			if err := itfCtl.MarkAsFinish("gen", isSysBusy || isFileBusy); err != nil {
+				logrus.Errorf("fail to mark gen as finish: %v, tf err:%v", err, errTf)
+				return err.Error() + msg + tfErrMsg
 			}
-			if is_sys_busy || is_file_busy {
-				if is_file_busy {
-					logrus.Warnf("file busy detected in tf msg %s", tf_err_msg)
-					if err := itf_ctl.CleanTfAndLock(); err != nil {
+			if isSysBusy || isFileBusy {
+				if isFileBusy {
+					logrus.Warnf("file busy detected in tf msg %s", tfErrMsg)
+					if err := itfCtl.CleanTfAndLock(); err != nil {
 						logrus.Errorf("fail to CleanTfAndLock: %v", err)
 					}
 				}
-				logrus.Warnf("sys, file busy. begin plugin reload checking. msg:%s, err:%v", msg, err_tf)
-				dis.sys_ctl.ReloadPlugin()
+				logrus.Warnf("sys, file busy. begin plugin reload checking. msg:%s, err:%v", msg, errTf)
+				if err := dis.sysCtl.ReloadPlugin(); err != nil {
+					logrus.Errorf("create runner, fail to ReloadPlugin: %v", err)
+				}
 			}
 		}
-		logrus.Warnf("runner creation with tf controller. msg:%s, err:%v", msg, err_tf)
+		logrus.Warnf("runner creation with tf controller. msg:%s, err:%v", msg, errTf)
 		return msg
 	} else {
 		// if need pool(not recommended), pls use cmd mode
-		return dis.createRunnerCmd(store, act, runer_id, repo_name, repo_url, org_name, owner_name, labels)
+		return dis.createRunnerCmd(store, act, runnerID, repoName, repoURL, orgName, ownerName, labels)
 	}
 }
 
-func (dis EciDispatcher) createRunnerTfCtl(store common.Store, act string, runer_id string, repo_name string,
-	repo_url string, org_name string, owner_name string, labels []string) (tfc.ITfController, error, string) {
+func (dis EciDispatcher) createRunnerTfCtl(store common.Store, act string, runnerID string, repoName string,
+	repoURL string, orgName string, ownerName string, labels []string) (tfc.ITfController, string, error) {
 	logrus.Infof("Tf Controller Creating runner...")
 
-	ctl := tfc.CreationController(dis.cur_path,
-		map[string]string{"act": act, "runer_id": runer_id, "repo_name": repo_name,
-			"repo_url": repo_url, "org_name": org_name, "owner_name": owner_name,
-			"image_ver": dis.image_ver, "ctx_log_level": *ctx_log_level, "dis_ip": dis.dis_addr,
-		}, store, *cloud_pr, dis.checkDynamicLabels, labels)
+	ctl := tfc.CreateController(dis.curPath,
+		map[string]string{"act": act, "runer_id": runnerID, "repo_name": repoName,
+			"repo_url": repoURL, "org_name": orgName, "owner_name": ownerName,
+			"image_ver": dis.imageVer, "ctx_log_level": dis.ctxLogLevel, "dis_ip": dis.disAddr,
+		}, store, dis.cloudPr, dis.checkDynamicLabels, labels, dis.gitAgent)
 
-	logrus.Infof("Creating runner " + ctl.TfFilePath() + " with tf ctl...")
+	logrus.Infof("Creating runner %s with tf ctl...", ctl.TfFilePath())
 	if isfinish, err := ctl.Finished("gen"); !isfinish {
 		if err != nil {
-			return nil, err, err.Error()
+			return nil, err.Error(), err
 		} else {
 			msg := "can't gen lock" + ctl.TfFilePath()
-			return nil, fmt.Errorf(msg), msg
+			return nil, msg, fmt.Errorf("can't gen lock %s", ctl.TfFilePath())
 		}
 	}
-	if err := ctl.GenTfConfigs(dis.cur_path + "runner/"); err != nil {
-		return ctl, err, "fail to generate tf configurations for" + ctl.TfFilePath()
+	if err := ctl.GenTfConfigs(dis.curPath + "runner/"); err != nil {
+		return ctl, "fail to generate tf configurations for" + ctl.TfFilePath(), err
 	}
 	if err := ctl.InitTerraform(); err != nil {
-		return ctl, err, "fail to init tf controller for" + ctl.TfFilePath()
+		return ctl, "fail to init tf controller for" + ctl.TfFilePath(), err
 	}
 	if state, des := ctl.State(false); state {
 		msg := des + " state of runner path exists. skip it: " + ctl.TfFilePath()
-		return nil, nil, msg
+		return nil, msg, nil
 	}
 
-	initAndApply := func() (tfc.ITfController, error, string) {
+	initAndApply := func() (tfc.ITfController, string, error) {
 		if err := ctl.Init(); err != nil {
-			return ctl, err, "fail to init tf configurations."
+			return ctl, "fail to init tf configurations.", err
 		}
 		if err := ctl.Apply(); err != nil {
-			return ctl, err, "fail to apply tf configurations."
+			return ctl, "fail to apply tf configurations.", err
 		}
-		return nil, nil, "Success init and apply"
+		return nil, "Success init and apply", nil
 	}
 
-	if inter_ctl, inter_err, inter_msg := initAndApply(); inter_err != nil {
-		logrus.Errorf("initAndApply err "+ctl.TfFilePath()+", %s", inter_err.Error())
-		if strings.Contains(inter_err.Error(),
+	if interCtl, interMsg, interErr := initAndApply(); interErr != nil {
+		logrus.Errorf("initAndApply err %s, %s", ctl.TfFilePath(), interErr.Error())
+		if strings.Contains(interErr.Error(),
 			"installed provider plugins are not consistent") {
-			logrus.Warnf("hcl inconsist with pr of " + ctl.TfFilePath() + ", clean and init apply again")
-			inter_ctl.CleanHCL()
-			if inter_ctl_hcl, inter_err_hcl, inter_msg_hcl := initAndApply(); inter_err_hcl != nil {
-				logrus.Errorf("hcl clean fail "+ctl.TfFilePath()+", %s", inter_err_hcl.Error())
-				return inter_ctl_hcl, inter_err_hcl, inter_msg_hcl
+			logrus.Warnf("hcl inconsist with pr of %s, clean and init apply again", ctl.TfFilePath())
+			if err := interCtl.CleanHCL(); err != nil {
+				logrus.Errorf("create runner, fail to clean hcl, %v", err)
+			}
+			if interCtlHcl, interMsgHcl, interErrHcl := initAndApply(); interErrHcl != nil {
+				logrus.Errorf("hcl clean fail "+ctl.TfFilePath()+", %s", interErrHcl.Error())
+				return interCtlHcl, interMsgHcl, interErrHcl
 			}
 		} else {
-			return inter_ctl, inter_err, inter_msg
+			return interCtl, interMsg, interErr
 		}
 	}
 
 	if state, des := ctl.State(true); !state {
 		msg := "fail to apply with nil err, but state of " + ctl.TfFilePath() + " does not contains service. " + des
-		return ctl, fmt.Errorf(msg), msg
+		return ctl, msg, fmt.Errorf("fail to apply with nil err, but state of %s does not contains service %s", ctl.TfFilePath(), des)
 
 	}
-	if !dis.r_competition {
+
+	if !dis.rCompetition {
 		logrus.Warnf("runner competition not detected. safe reset destroy for %s", ctl.TfFilePath())
 		store.ResetDestory(ctl.TfFilePath())
 		if err := ctl.MarkAsFinish("del", false); err != nil {
@@ -489,85 +515,85 @@ func (dis EciDispatcher) createRunnerTfCtl(store common.Store, act string, runer
 		}
 	}
 
-	return nil, nil, "Finish runner creation." + ctl.TfFilePath()
+	return nil, "Finish runner creation." + ctl.TfFilePath(), nil
 }
 
-func (dis EciDispatcher) createRunnerCmd(store common.Store, act string, runer_id string, repo_name string,
-	repo_url string, org_name string, owner_name string, labels []string) string {
+func (dis EciDispatcher) createRunnerCmd(store common.Store, act string, runnerID string, repoName string,
+	repoURL string, orgName string, ownerName string, labels []string) string {
 	logrus.Infof("CMD Creating runner...")
 
-	key, runner_type := store.GetKey()
-	pat, pat_type := store.GetPat()
-	specific_labels, _ := store.GetLabels()
-	reg_url, _ := store.GetUrl()
-	cpu, _ := store.GetCpu()
+	key, runnerType := store.GetKey()
+	pat, patType := store.GetPat()
+	specificLabels, _ := store.GetLabels()
+	regURL, _ := store.GetURL()
+	cpu, _ := store.GetCPU()
 	mem, _ := store.GetMemory()
-	sec_gp_id, _ := store.GetSecGpId()
-	vswitch_id, _ := store.GetVSwitchId()
-	gcp_dind, _ := store.GetGcpDind()
-	repo_image_ver, _ := store.GetImageVersion()
-	image_ver := common.Ternary(repo_image_ver == "", dis.image_ver, repo_image_ver).(string)
-	large_disk := ""
+	secGpID, _ := store.GetSecGpID()
+	vswitchID, _ := store.GetVSwitchID()
+	gcpDind, _ := store.GetGcpDind()
+	repoImageVer, _ := store.GetImageVersion()
+	imageVer := common.Ternary(repoImageVer == "", dis.imageVer, repoImageVer).(string)
+	largeDisk := ""
 
-	if len(key) <= 0 || len(runner_type) <= 0 || pat == "null" {
-		logrus.Warnf("Skip the runner creation. key: %s, type: %s, pat: %s", key, runner_type, pat)
+	if len(key) <= 0 || len(runnerType) <= 0 || pat == "null" {
+		logrus.Warnf("Skip the runner creation. key: %s, type: %s, pat: %s", key, runnerType, pat)
 		return "org and repo token not exist. please run the 'register serverless runner' workflow first."
-	} else if runner_type == "pool" {
+	} else if runnerType == "pool" {
 		return "pool should not be created here. skip it."
-	} else if !dis.checkLabels(labels, repo_name, org_name, runner_type, specific_labels) {
-		return "wf lablel dose not specify the repo/org name or runner label:" + specific_labels
+	} else if !dis.checkLabels(labels, repoName, orgName, runnerType, specificLabels) {
+		return "wf lablel dose not specify the repo/org name or runner label:" + specificLabels
 	}
 
-	specific_labels += dis.checkDynamicLabels(labels, &cpu, &mem, &vswitch_id, &sec_gp_id, &image_ver, &large_disk)
+	specificLabels += dis.checkDynamicLabels(labels, &cpu, &mem, &vswitchID, &secGpID, &imageVer, &largeDisk)
 
-	logrus.Infof("Create runner. pat_type: %s, runner_type: %s", pat_type, runner_type)
-	if pat_type != runner_type && (pat_type == "repo" && runner_type == "org") {
-		runner_type = pat_type
-		reg_url = reg_url + "/" + repo_name
+	logrus.Infof("Create runner. patType: %s, runnerType: %s", patType, runnerType)
+	if patType != runnerType && (patType == "repo" && runnerType == "org") {
+		runnerType = patType
+		regURL = regURL + "/" + repoName
 	}
 
 	sec, _ := store.GetSecret()
 	region, _ := store.GetRegion()
-	charge_labels, _ := store.GetChargeLabels()
-	runner_group, _ := store.GetRunnerGroup()
-	arm_client_id, _ := store.GetArmClientId()
-	arm_client_secret, _ := store.GetArmClientSecret()
-	arm_subscription_id, _ := store.GetArmSubscriptionId()
-	arm_tenant_id, _ := store.GetArmTenantId()
-	arm_environment, _ := store.GetArmEnvironment()
-	arm_rp_registration, _ := store.GetArmRPRegistration()
-	arm_resource_group_name, _ := store.GetArmResourceGroupName()
-	arm_subnet_id, _ := store.GetArmSubnetID()
-	arm_log_ana_workspace_id, _ := store.GetArmLogAnalyticsWorkspaceID()
-	arm_log_ana_workspace_key, _ := store.GetArmLogAnalyticsWorkspaceKey()
-	gcp_credentials, _ := store.GetGcpCredential()
-	gcp_project, _ := store.GetGcpProject()
-	gcp_region, _ := store.GetGcpRegion()
-	gcp_sa, _ := store.GetGcpSA()
-	gcp_apikey, _ := store.GetGcpApikey()
-	gcp_vpc, _ := store.GetGcpVpc()
-	gcp_subnet, _ := store.GetGcpSubnet()
+	chargeLabels, _ := store.GetChargeLabels()
+	runnerGroup, _ := store.GetRunnerGroup()
+	armClientID, _ := store.GetArmClientID()
+	armClientSecret, _ := store.GetArmClientSecret()
+	armSubscriptionID, _ := store.GetArmSubscriptionID()
+	armTenantID, _ := store.GetArmTenantID()
+	armEnvironment, _ := store.GetArmEnvironment()
+	armRpRegistration, _ := store.GetArmRPRegistration()
+	armResourceGroupName, _ := store.GetArmResourceGroupName()
+	armSubnetID, _ := store.GetArmSubnetID()
+	armLogAnaWorkspaceID, _ := store.GetArmLogAnalyticsWorkspaceID()
+	armLogAnaWorkspaceKey, _ := store.GetArmLogAnalyticsWorkspaceKey()
+	gcpCredentials, _ := store.GetGcpCredential()
+	gcpProject, _ := store.GetGcpProject()
+	gcpRegion, _ := store.GetGcpRegion()
+	gcpSa, _ := store.GetGcpSA()
+	gcpApikey, _ := store.GetGcpApikey()
+	gcpVpc, _ := store.GetGcpVpc()
+	gcpSubnet, _ := store.GetGcpSubnet()
 	// following vars will not be sync into cmd and renewed by go clt
-	aci_location, _ := store.GetAciLocation()
-	aci_sku, _ := store.GetAciSku()
-	aci_network_type, _ := store.GetAciNetworkType()
-	out, err := exec.Command("/bin/bash", dis.cur_path+"create_runner.sh", act, runer_id,
-		repo_name, reg_url, org_name, owner_name, pat, image_ver, key, sec, region,
-		sec_gp_id, vswitch_id, runner_type, cpu, mem,
-		common.Ternary(specific_labels == "", "none", strings.ReplaceAll(specific_labels, " ", "")).(string),
-		common.Ternary(charge_labels == "", "none", strings.ReplaceAll(charge_labels, " ", "")).(string),
-		common.Ternary(runner_group == "", "default", strings.ReplaceAll(runner_group, " ", "")).(string),
-		*ctx_log_level, *cloud_pr,
-		arm_client_id, arm_client_secret, arm_subscription_id, arm_tenant_id, arm_environment, arm_rp_registration,
-		arm_resource_group_name, arm_subnet_id, arm_log_ana_workspace_id, arm_log_ana_workspace_key,
-		gcp_credentials, gcp_project, gcp_region, gcp_sa, gcp_apikey, gcp_dind, gcp_vpc, gcp_subnet,
-		aci_location, aci_sku, aci_network_type, large_disk,
+	aciLocation, _ := store.GetAciLocation()
+	aciSku, _ := store.GetAciSku()
+	aciNetworkType, _ := store.GetAciNetworkType()
+	out, err := exec.Command("/bin/bash", dis.curPath+"create_runner.sh", act, runnerID,
+		repoName, regURL, orgName, ownerName, pat, imageVer, key, sec, region,
+		secGpID, vswitchID, runnerType, cpu, mem,
+		common.Ternary(specificLabels == "", "none", strings.ReplaceAll(specificLabels, " ", "")).(string),
+		common.Ternary(chargeLabels == "", "none", strings.ReplaceAll(chargeLabels, " ", "")).(string),
+		common.Ternary(runnerGroup == "", "default", strings.ReplaceAll(runnerGroup, " ", "")).(string),
+		dis.ctxLogLevel, dis.cloudPr,
+		armClientID, armClientSecret, armSubscriptionID, armTenantID, armEnvironment, armRpRegistration,
+		armResourceGroupName, armSubnetID, armLogAnaWorkspaceID, armLogAnaWorkspaceKey,
+		gcpCredentials, gcpProject, gcpRegion, gcpSa, gcpApikey, gcpDind, gcpVpc, gcpSubnet,
+		aciLocation, aciSku, aciNetworkType, largeDisk,
 	).Output()
 	if err != nil {
 		logrus.Errorf("error %s", err)
 	} else {
-		logrus.Infof("ResetDestory " + repo_name + "-" + runer_id)
-		store.ResetDestory(repo_name + "-" + runer_id)
+		logrus.Info("ResetDestory " + repoName + "-" + runnerID)
+		store.ResetDestory(repoName + "-" + runnerID)
 	}
 	output := string(out)
 	logrus.Warnf("Finish runner creation, output: %s", output)
@@ -575,127 +601,130 @@ func (dis EciDispatcher) createRunnerCmd(store common.Store, act string, runer_i
 	return output
 }
 
-func (dis EciDispatcher) removeRunner(act string, runer_name string, repo_name string,
-	org_name string, run_wf string, labels []string, url string, owner string) string {
-	logrus.Printf("removeRunner paras: act %s, runer_name %s, repo_name %s, org_name %s, run_wf %s, labels %v, url %s, owner %s",
-		act, runer_name, repo_name, org_name, run_wf, labels, url, owner)
-	store := common.EnvStore(nil, org_name, repo_name)
-	if store.IsDestory(runer_name) {
-		logrus.Warnf("workflow " + repo_name + "-" + run_wf + " occupied runner " + runer_name + " already removed.")
-		return "workflow " + repo_name + "-" + run_wf + " occupied runner " + runer_name + " already removed."
+func (dis EciDispatcher) removeRunner(act string, runnerName string, repoName string,
+	orgName string, runWf string, labels []string, url string, owner string) string {
+	logrus.Printf("removeRunner paras: act %s, runnerName %s, repoName %s, orgName %s, runWf %s, labels %v, url %s, owner %s",
+		act, runnerName, repoName, orgName, runWf, labels, url, owner)
+	store := common.EnvStore(nil, orgName, repoName)
+	if store.IsDestory(runnerName + "-" + runWf) {
+		logrus.Warn("workflow " + repoName + "-" + runWf + " occupied runner " + runnerName + " already removed.")
+		return "workflow " + repoName + "-" + runWf + " occupied runner " + runnerName + " already removed."
 	}
-	if *tf_ctl == "go" {
-		itf_ctl, err_tf, msg := dis.removeRunnerTfCtl(store, act, runer_name, repo_name,
-			org_name, run_wf, labels, url, run_wf, owner)
-		if itf_ctl != nil {
-			if err_tf != nil {
-				tf_err_msg := err_tf.Error()
-				is_file_busy := dis.sys_ctl.IsFileBusy(tf_err_msg)
-				is_sys_busy := dis.sys_ctl.IsSysBusy(tf_err_msg)
-				logrus.Warnf("tf del error message is %s", tf_err_msg)
-				if err := itf_ctl.MarkAsFinish("del", is_sys_busy || is_file_busy); err != nil {
-					logrus.Warnf("after desrtoy, fail to mark del as finish" + err.Error() + err_tf.Error() + msg)
-					return err.Error() + err_tf.Error() + msg
+	if dis.tfCtl == "go" {
+		itfCtl, msg, errTf := dis.removeRunnerTfCtl(store, act, runnerName, repoName,
+			orgName, runWf, labels, url, runWf, owner)
+		if itfCtl != nil {
+			if errTf != nil {
+				tfErrMsg := errTf.Error()
+				isFileBusy := dis.sysCtl.IsFileBusy(tfErrMsg)
+				isSysBusy := dis.sysCtl.IsSysBusy(tfErrMsg)
+				logrus.Warnf("tf del error message is %s", tfErrMsg)
+				if err := itfCtl.MarkAsFinish("del", isSysBusy || isFileBusy); err != nil {
+					logrus.Warn("after desrtoy, fail to mark del as finish" + err.Error() + errTf.Error() + msg)
+					return err.Error() + errTf.Error() + msg
 				}
-				if is_file_busy || is_sys_busy {
-					logrus.Warnf("sys,file busy during destroy. plugin reload checking. msg:%s, err:%v", msg, err_tf)
-					dis.sys_ctl.ReloadPlugin()
+				if isFileBusy || isSysBusy {
+					logrus.Warnf("sys,file busy during destroy. plugin reload checking. msg:%s, err:%v", msg, errTf)
+					if err := dis.sysCtl.ReloadPlugin(); err != nil {
+						logrus.Errorf("remove runner, fail to ReloadPlugin: %v", err)
+					}
 				}
 			}
-			if err := itf_ctl.MarkAsFinish("gen", false); err != nil {
-				logrus.Warnf("after desrtoy, fail to mark gen as finish" + err.Error() + err_tf.Error() + msg)
-				return err.Error() + err_tf.Error() + msg
+			if err := itfCtl.MarkAsFinish("gen", false); err != nil {
+				logrus.Warn("after desrtoy, fail to mark gen as finish" + err.Error() + errTf.Error() + msg)
+				return err.Error() + errTf.Error() + msg
 			}
 		}
-		logrus.Warnf("runner removing with tf controller. msg:%s, err:%s", msg, err_tf)
+		logrus.Warnf("runner removing with tf controller. msg:%s, err:%s", msg, errTf)
 		return msg
 	} else {
-		return dis.removeRunnerCmd(store, act, runer_name, repo_name, org_name, run_wf)
+		return dis.removeRunnerCmd(store, act, runnerName, repoName, orgName, runWf)
 	}
 }
 
-func (dis EciDispatcher) removeRunnerTfCtl(store common.Store, act string, runer_name string, repo_name string,
-	org_name string, run_wf string, labels []string, url string, runner_id string,
-	owner string) (tfc.ITfController, error, string) {
-	run_on := common.Ternary(len(runer_name) == 0, repo_name+"-"+run_wf, runer_name).(string)
-	logrus.Infof("Removing runner " + dis.cur_path + run_on + " with tf ctl...")
-	ctl := tfc.DestroyController(run_on, dis.cur_path+run_on, store, *cloud_pr, dis.cur_path)
+func (dis EciDispatcher) removeRunnerTfCtl(store common.Store, act string, runnerName string, repoName string,
+	orgName string, runWf string, labels []string, url string, runnerID string,
+	owner string) (tfc.ITfController, string, error) {
+	runOn := common.Ternary(len(runnerName) == 0, repoName+"-"+runWf, runnerName).(string)
+	logrus.Info("Removing runner " + dis.curPath + runOn + " with tf ctl...")
+	ctl := tfc.DestroyController(runOn, dis.curPath+runOn, store, dis.cloudPr, dis.curPath, dis.gitAgent)
 	if ctl == nil {
-		return nil, nil, "org and repo token dose not exist, please register."
+		return nil, "org and repo token dose not exist, please register.", nil
 	}
 	if isfinish, err := ctl.Finished("del"); !isfinish {
 		if err != nil {
-			return nil, err, err.Error()
+			return nil, err.Error(), err
 		} else {
-			msg := "can't del lock" + repo_name + "-" + run_wf
-			return nil, fmt.Errorf(msg), msg
+			msg := "can't del lock" + repoName + "-" + runWf
+			return nil, msg, fmt.Errorf("can't del lock %s-%s", repoName, runWf)
 		}
 	}
 	if !ctl.TfConfigsExists() {
 
 		msg := "Runner config dose not exists. Skip destroy."
-		return nil, fmt.Errorf(msg), msg
+		return nil, msg, fmt.Errorf("runner config dose not exists. skip destroy")
 	}
 	if err := ctl.InitTerraform(); err != nil {
 		msg := "fail to init Tf controller for destroy."
-		return ctl, fmt.Errorf(msg), msg
+		return ctl, msg, fmt.Errorf("fail to init Tf controller for destroy")
 	}
 	if state, des := ctl.State(false); !state {
-		msg := des + " runner path: " + common.Ternary(len(runer_name) == 0, repo_name+"-"+run_wf, runer_name).(string)
+		msg := des + " runner path: " + common.Ternary(len(runnerName) == 0, repoName+"-"+runWf, runnerName).(string)
 
-		return ctl, fmt.Errorf(msg), msg
+		return ctl, msg, fmt.Errorf("%s runner path: %s", des,
+			common.Ternary(len(runnerName) == 0, repoName+"-"+runWf, runnerName).(string))
 	}
-	if dis.sys_ctl.ExceedReload() && !strings.Contains(runer_name, run_wf) && !strings.Contains(runer_name, "sls-comp") {
-		if exist, _ := ctl.FileState(dis.cur_path + run_wf); !exist {
-			logrus.Warnf("runner competition detected run on %s, wf %s", runer_name, run_wf)
-			itf_ctl, err_tf, msg := dis.createRunnerTfCtl(store, act, run_wf+"-sls-comp-"+dis.crypt_ctl.RandStr(4), repo_name, url, org_name, owner, labels)
-			if err_tf != nil && itf_ctl != nil {
-				tf_err_msg := err_tf.Error()
-				logrus.Warnf("runner competition, tf gen error message is %s, msg %s", tf_err_msg, msg)
-				if err := itf_ctl.MarkAsFinish("gen", dis.sys_ctl.IsSysBusy(tf_err_msg)); err != nil {
-					logrus.Errorf("runner competition, fail to mark gen as finish: %s, tf err:%s", err, err_tf)
+	if dis.sysCtl.ExceedReload() && !strings.Contains(runnerName, runWf) && !strings.Contains(runnerName, "sls-comp") {
+		if exist, _ := ctl.FileState(dis.curPath + runWf); !exist {
+			logrus.Warnf("runner competition detected run on %s, wf %s", runnerName, runWf)
+			itfCtl, msg, errTf := dis.createRunnerTfCtl(store, act, runWf+"-sls-comp-"+dis.cryptCtl.RandStr(4), repoName, url, orgName, owner, labels)
+			if errTf != nil && itfCtl != nil {
+				tfErrMsg := errTf.Error()
+				logrus.Warnf("runner competition, tf gen error message is %s, msg %s", tfErrMsg, msg)
+				if err := itfCtl.MarkAsFinish("gen", dis.sysCtl.IsSysBusy(tfErrMsg)); err != nil {
+					logrus.Errorf("runner competition, fail to mark gen as finish: %s, tf err:%s", err, errTf)
 				}
-				return ctl, err_tf, "fail to create competition runner"
+				return ctl, "fail to create competition runner", errTf
 			}
 		}
 	}
 	if err := ctl.Destroy(); err != nil {
-		return ctl, err, "fail to Destroy runner. " + err.Error()
+		return ctl, "fail to Destroy runner. " + err.Error(), err
 	}
-	store.MarkDestory(run_on)
-	return ctl, nil, "Success remove runner " + run_on
+	store.MarkDestory(runOn)
+	return ctl, "Success remove runner " + runOn, nil
 }
 
-func (dis EciDispatcher) removeRunnerCmd(store common.Store, act string, runer_name string, repo_name string,
-	org_name string, run_wf string) string {
+func (dis EciDispatcher) removeRunnerCmd(store common.Store, act string, runnerName string, repoName string,
+	orgName string, runWf string) string {
 	logrus.Infof("CMD Remove runner...")
 	key, _ := store.GetKey()
 	sec, _ := store.GetSecret()
 	region, _ := store.GetRegion()
-	arm_client_id, _ := store.GetArmClientId()
-	arm_client_secret, _ := store.GetArmClientSecret()
-	arm_subscription_id, _ := store.GetArmSubscriptionId()
-	arm_tenant_id, _ := store.GetArmTenantId()
-	arm_environment, _ := store.GetArmEnvironment()
-	arm_rp_registration, _ := store.GetArmRPRegistration()
-	arm_subnet_id, _ := store.GetArmSubnetID()
-	arm_log_ana_workspace_id, _ := store.GetArmLogAnalyticsWorkspaceID()
-	arm_log_ana_workspace_key, _ := store.GetArmLogAnalyticsWorkspaceKey()
+	armClientID, _ := store.GetArmClientID()
+	armClientSecret, _ := store.GetArmClientSecret()
+	armSubscriptionID, _ := store.GetArmSubscriptionID()
+	armTenantID, _ := store.GetArmTenantID()
+	armEnvironment, _ := store.GetArmEnvironment()
+	armRpRegistration, _ := store.GetArmRPRegistration()
+	armSubnetID, _ := store.GetArmSubnetID()
+	armLogAnaWorkspaceID, _ := store.GetArmLogAnalyticsWorkspaceID()
+	armLogAnaWorkspaceKey, _ := store.GetArmLogAnalyticsWorkspaceKey()
 	if len(key) <= 0 {
 		return "org and repo token not exist. please run the 'register serverless runner' workflow first."
-	} else if store.IsDestory(repo_name + "-" + run_wf) {
-		logrus.Infof("workflow " + repo_name + "-" + run_wf + " occupied runner " + runer_name + " already removed.")
-		return "workflow " + repo_name + "-" + run_wf + " occupied runner " + runer_name + " already removed."
+	} else if store.IsDestory(repoName + "-" + runWf) {
+		logrus.Info("workflow " + repoName + "-" + runWf + " occupied runner " + runnerName + " already removed.")
+		return "workflow " + repoName + "-" + runWf + " occupied runner " + runnerName + " already removed."
 	}
-	out, err := exec.Command("/bin/bash", dis.cur_path+"remove_runner.sh", act, runer_name, key, sec,
-		region, org_name, repo_name, run_wf, *cloud_pr,
-		arm_client_id, arm_client_secret, arm_subscription_id, arm_tenant_id, arm_environment,
-		arm_rp_registration, arm_subnet_id, arm_log_ana_workspace_id, arm_log_ana_workspace_key).Output()
+	out, err := exec.Command("/bin/bash", dis.curPath+"remove_runner.sh", act, runnerName, key, sec,
+		region, orgName, repoName, runWf, dis.cloudPr,
+		armClientID, armClientSecret, armSubscriptionID, armTenantID, armEnvironment,
+		armRpRegistration, armSubnetID, armLogAnaWorkspaceID, armLogAnaWorkspaceKey).Output()
 	if err != nil {
 		fmt.Printf("error %s", err)
 	} else {
-		logrus.Infof("MarkDestory " + repo_name + "-" + run_wf)
-		store.MarkDestory(repo_name + "-" + run_wf)
+		logrus.Info("MarkDestory " + repoName + "-" + runWf)
+		store.MarkDestory(repoName + "-" + runWf)
 	}
 	output := string(out)
 	logrus.Warnf("Remove runner finish, output: %s", output)

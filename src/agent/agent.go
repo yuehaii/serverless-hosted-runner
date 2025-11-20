@@ -1,7 +1,8 @@
+// Package agent for external services
 package agent
 
 import (
-	"fmt"
+	"os"
 	"time"
 
 	common "serverless-hosted-runner/common"
@@ -11,8 +12,8 @@ import (
 )
 
 var (
-	DEFAULT_POOL_Q = "registration"
-	NOTIFICATION_Q = "notification"
+	DefaultPoolQueue  = "registration"
+	NotificationQueue = "notification"
 )
 
 type Agent interface {
@@ -21,19 +22,20 @@ type Agent interface {
 	NotifyAgent(msg string)
 }
 
-func CreateAliMNSAgent(url string, key string, secret string, q string, fn common.Mns_Process, fn_arg interface{}) Agent {
-	return MnsQueue{url, key, secret, q, fn, fn_arg, nil}
+func CreateAliMNSAgent(url string, key string, secret string, q string, fn common.MnsProcess, fnArg interface{}) Agent {
+	return MnsQueue{url, key, secret, q, fn, fnArg, nil, false}
 }
 
-func createAzureServiceBusAgent(url string, connectionString string, q string) Agent {
+func CreateAzureServiceBusAgent(url string, connectionString string, q string) Agent {
 	return nil
 }
 
 type MnsQueue struct {
-	MnsUrl, AccessKey, AccessSecret, Queue string
-	MsgProcess                             common.Mns_Process
+	MnsURL, AccessKey, AccessSecret, Queue string
+	MsgProcess                             common.MnsProcess
 	ParaProcess                            interface{}
 	queue                                  ali_mns.AliMNSQueue
+	activeMsg                              bool
 }
 
 func (q MnsQueue) InitAgent() {
@@ -57,7 +59,7 @@ func (q MnsQueue) NotifyAgent(msg string) {
 }
 
 func (q MnsQueue) sendMsg(msg string) error {
-	client := ali_mns.NewAliMNSClient(q.MnsUrl, q.AccessKey, q.AccessSecret)
+	client := ali_mns.NewClient(q.MnsURL)
 	queueManager := ali_mns.NewMNSQueueManager(client)
 
 	err := queueManager.CreateQueue(q.Queue, 0, 65536, 604800, 30, 3, 3)
@@ -69,11 +71,11 @@ func (q MnsQueue) sendMsg(msg string) error {
 	}
 
 	queue := ali_mns.NewMNSQueue(q.Queue, client)
-	mns_msg := ali_mns.MessageSendRequest{
+	mnsMsg := ali_mns.MessageSendRequest{
 		MessageBody:  msg,
 		DelaySeconds: 0,
 		Priority:     8}
-	_, err = queue.SendMessage(mns_msg)
+	_, err = queue.SendMessage(mnsMsg)
 	if err != nil {
 		logrus.Errorln(err)
 		return err
@@ -82,11 +84,17 @@ func (q MnsQueue) sendMsg(msg string) error {
 }
 
 func (q MnsQueue) initQueue() ali_mns.AliMNSQueue {
-	client := ali_mns.NewAliMNSClient(q.MnsUrl, q.AccessKey, q.AccessSecret)
+	if err := os.Setenv(ali_mns.AliyunAkEnvKey, q.AccessKey); err != nil {
+		logrus.Errorf("fail to set env %s, %v", ali_mns.AliyunAkEnvKey, err)
+	}
+	if err := os.Setenv(ali_mns.AliyunSkEnvKey, q.AccessSecret); err != nil {
+		logrus.Errorf("fail to set env %s, %v", ali_mns.AliyunSkEnvKey, err)
+	}
+	client := ali_mns.NewClient(q.MnsURL)
 	queueManager := ali_mns.NewMNSQueueManager(client)
 	err := queueManager.CreateQueue(q.Queue, 0, 65536, 604800, 30, 3, 3)
 	if err != nil && !ali_mns.ERR_MNS_QUEUE_ALREADY_EXIST_AND_HAVE_SAME_ATTR.IsEqual(err) {
-		fmt.Println(err, q.MnsUrl, q.Queue)
+		logrus.Println(err, q.MnsURL, q.Queue)
 	}
 	if err == nil {
 		time.Sleep(time.Duration(2) * time.Second)
@@ -96,25 +104,24 @@ func (q MnsQueue) initQueue() ali_mns.AliMNSQueue {
 }
 
 func (q MnsQueue) listenMessage() error {
-	if len(q.MnsUrl) == 0 {
+	if len(q.MnsURL) == 0 {
 		return nil
 	}
-
-	for {
-		if q.MsgProcess(q.queue, q.ParaProcess) {
-			break
-		}
+	if q.activeMsg {
+		q.activeMessage()
+	}
+	for !q.MsgProcess(q.queue, q.ParaProcess) {
 		time.Sleep(1 * time.Second)
 	}
 	return nil
 }
 
 func (q MnsQueue) activeMessage() int64 {
-	client := ali_mns.NewAliMNSClient(q.MnsUrl, q.AccessKey, q.AccessSecret)
+	client := ali_mns.NewClient(q.MnsURL)
 	queueManager := ali_mns.NewMNSQueueManager(client)
 	attr, err := queueManager.GetQueueAttributes(q.Queue)
 	if err != nil {
-		fmt.Printf("error %s", err)
+		logrus.Printf("error %s", err)
 		return 0
 	}
 	return attr.ActiveMessages

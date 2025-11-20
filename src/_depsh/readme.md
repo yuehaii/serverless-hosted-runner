@@ -1,1 +1,0 @@
-The scrips under this directory are used by pool mode. Scrips are deprecating and will not be maintained in future. 

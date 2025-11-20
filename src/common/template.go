@@ -1,23 +1,41 @@
 package common
 
-import "os"
+import (
+	"os"
 
-func Ternary(cond bool, true_val, false_val interface{}) interface{} {
+	"github.com/ingka-group-digital/app-monitor-agent/logrus"
+)
+
+func Ternary(cond bool, trueVal, falseVal interface{}) interface{} {
 	if cond {
-		return true_val
+		return trueVal
 	} else {
-		return false_val
+		return falseVal
+	}
+}
+
+func TernaryComparable[T comparable](cond bool, trueval T, falseval T, typeIdentify ...T) T {
+	if cond {
+		return trueval
+	} else {
+		return falseval
 	}
 }
 
 func SetContextLogLevel(level string) {
-	os.Setenv("CTX_LOG_LEVEL", level)
+	if err := os.Setenv("CTX_LOG_LEVEL", level); err != nil {
+		logrus.Errorf("fail to set context log level to env: %v", err)
+	}
 }
 
 func SetLogursLogLevel(level string) {
-	os.Setenv("LOGRUS_LOG_LEVEL", level)
+	if err := os.Setenv("LOGRUS_LOG_LEVEL", level); err != nil {
+		logrus.Errorf("fail to set logrus log level to env: %v", err)
+	}
 }
 
 func SetFmtLogLevel(level string) {
-	os.Setenv("FMT_LOG_LEVEL", level)
+	if err := os.Setenv("FMT_LOG_LEVEL", level); err != nil {
+		logrus.Errorf("fail to set fmt log level to env: %v", err)
+	}
 }

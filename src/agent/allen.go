@@ -18,12 +18,12 @@ type IAllenStore interface {
 }
 
 type AllenStore struct {
-	pull_interval    string
-	db_scan_interval int
-	scan_marker      string
-	db_handler       common.IPostgresDB
-	parse_reg        common.ParseRegistration
-	vs_detector      cloud.IVSWitch
+	pullInterval   string
+	dbScanInterval int
+	scanMarker     string
+	dbHandler      common.IPostgresDB
+	parseReg       common.ParseRegistration
+	vsDetector     cloud.IVSWitch
 }
 
 func CreateAllenStoreAgent(parser common.ParseRegistration) IAllenStore {
@@ -31,9 +31,9 @@ func CreateAllenStoreAgent(parser common.ParseRegistration) IAllenStore {
 }
 
 func (aln *AllenStore) InitAgent() {
-	aln.db_handler = common.CreatePostgresDB()
-	aln.db_handler.InitConnection()
-	aln.vs_detector = cloud.CreateVSWitch()
+	aln.dbHandler = common.CreatePostgresDB()
+	aln.dbHandler.InitConnection()
+	aln.vsDetector = cloud.CreateVSWitch()
 }
 
 func (aln AllenStore) MonitorOnAgent() {
@@ -41,23 +41,23 @@ func (aln AllenStore) MonitorOnAgent() {
 	for {
 		logrus.Infof("MonitorOnAgent, connect allen configuration...")
 		mem.DetectUsage()
-		if aln.db_handler.Connect() == nil {
+		if aln.dbHandler.Connect() == nil {
 			aln.listRegistration()
 			aln.parseRegistrations()
-			aln.db_handler.Disconnect()
+			aln.dbHandler.Disconnect()
 		}
-		logrus.Infof("MonitorOnAgent, wait " + strconv.Itoa(aln.db_scan_interval) + " minutes and check again")
-		time.Sleep(time.Duration(aln.db_scan_interval) * time.Minute)
+		logrus.Infof("MonitorOnAgent, wait %s minutes and check again", strconv.Itoa(aln.dbScanInterval))
+		time.Sleep(time.Duration(aln.dbScanInterval) * time.Minute)
 		mem.CompareLast()
 	}
 }
 
 func (aln AllenStore) NotifyAgent(msg string) {
-	// aln.db_handler.UpdateStatus("configured", "registration succeed")
+	// aln.dbHandler.UpdateStatus("configured", "registration succeed")
 }
 
 func (aln AllenStore) listRegistration() {
-	_, err := aln.db_handler.ListRow(aln.markRegistration(""))
+	_, err := aln.dbHandler.ListRow(aln.markRegistration(""))
 	if err != nil {
 		logrus.Errorf("listRegistration failure: %s", err)
 	}
@@ -69,61 +69,69 @@ func (aln AllenStore) saveConfig(conf string) (common.PoolMsg, error) {
 	if err != nil {
 		return common.PoolMsg{}, err
 	}
-	fmt.Println("allen, saveConfig Unmarshal data, ", msg.Type, msg.Name, msg.Pat, msg.Url, msg.Size, msg.Key,
-		msg.Secret, msg.Region, msg.SecGpId, msg.VSwitchId,
-		msg.Cpu, msg.Memory)
-	conv_msg := msg.ConvertPoolMsg()
-	conv_msg.PullInterval = aln.pull_interval
-	store := common.EnvStore(&conv_msg, msg.Name, msg.Name)
+	fmt.Println("allen, saveConfig Unmarshal data, ", msg.Type, msg.Name, msg.Pat, msg.URL, msg.Size, msg.Key,
+		msg.Secret, msg.Region, msg.SecGpID, msg.VSwitchID,
+		msg.CPU, msg.Memory)
+	convMsg := msg.ConvertPoolMsg()
+	convMsg.PullInterval = aln.pullInterval
+	store := common.EnvStore(&convMsg, msg.Name, msg.Name)
 	store.Save()
-	return conv_msg, nil
+	return convMsg, nil
 }
 
-func (aln AllenStore) markRegistration(reg_id string) string {
-	cur_marker := os.Getenv(aln.scan_marker)
-	if reg_id == "" {
-		return cur_marker
+func (aln AllenStore) markRegistration(regID string) string {
+	curMarker := os.Getenv(aln.scanMarker)
+	if regID == "" {
+		return curMarker
 	}
-	if cur_marker != "" {
-		os.Setenv(aln.scan_marker, cur_marker+","+reg_id)
-		return cur_marker + "," + reg_id
+	if curMarker != "" {
+		if err := os.Setenv(aln.scanMarker, curMarker+","+regID); err != nil {
+			logrus.Errorf("markRegistration, fail to set env for marker: %s", err)
+		}
+		return curMarker + "," + regID
 	} else {
-		os.Setenv(aln.scan_marker, reg_id)
-		return reg_id
+		if err := os.Setenv(aln.scanMarker, regID); err != nil {
+			logrus.Errorf("markRegistration, fail to set env: %s", err)
+		}
+		return regID
 	}
 }
 
 func (aln AllenStore) parseRegistrations() {
-	has_next := true
+	hasNext := true
 	err := error(nil)
-	for has_next {
-		var cur_idx string
-		var msg_val string
-		var status_val string
-		var comment_val string
+	for hasNext {
+		var curIdx string
+		var msgVal string
+		var statusVal string
+		var commentVal string
 
-		has_next, err = aln.db_handler.IterateRows(&cur_idx, &msg_val, &status_val, &comment_val)
+		hasNext, err = aln.dbHandler.IterateRows(&curIdx, &msgVal, &statusVal, &commentVal)
 		if err != nil {
-			aln.db_handler.UpdateStatus(cur_idx, "failed", fmt.Sprintf("%s", err))
+			if err = aln.dbHandler.UpdateStatus(curIdx, "failed", fmt.Sprintf("%s", err)); err != nil {
+				logrus.Errorf("parseRegistrations, allen db UpdateStatus failure: %s", err)
+			}
 			continue
 		}
-		if msg_val == "" {
+		if msgVal == "" {
 			continue
 		}
-		conv_str, er := aln.saveConfig(msg_val)
+		convStr, er := aln.saveConfig(msgVal)
 		if er != nil {
 			logrus.Errorf("saveConfig failure: %s", err)
 		}
-		aln.parse_reg(conv_str)
-		aln.markRegistration(cur_idx)
-		go aln.updateAllenStore(cur_idx, conv_str)
+		aln.parseReg(convStr)
+		aln.markRegistration(curIdx)
+		go aln.updateAllenStore(curIdx, convStr)
 	}
 
 }
 
-func (aln AllenStore) updateAllenStore(cur_idx string, conv_str common.PoolMsg) {
-	aln.vs_detector.Info(conv_str.VSwitchId, conv_str.Key, conv_str.Secret, conv_str.Region)
-	aln.db_handler.UpdateStatus(cur_idx, "configured",
+func (aln AllenStore) updateAllenStore(curIdx string, convStr common.PoolMsg) {
+	aln.vsDetector.Info(convStr.VSwitchID, convStr.Key, convStr.Secret, convStr.Region)
+	if err := aln.dbHandler.UpdateStatus(curIdx, "configured",
 		fmt.Sprintf("registration succeed. vswitch %s, %d ip left",
-			conv_str.VSwitchId, aln.vs_detector.LeftIPs()))
+			convStr.VSwitchID, aln.vsDetector.LeftIPs())); err != nil {
+		logrus.Errorf("updateAllenStore, allen db UpdateStatus failure: %s", err)
+	}
 }

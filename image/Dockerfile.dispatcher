@@ -1,66 +1,28 @@
-FROM artifactory.cloud.ingka-system.cn/ccoecn-docker-virtual/golang:1.24.0 As builder
+FROM artifactory.cloud.ingka-system.cn/ccoecn-docker-virtual/golang:1.25.0 AS builder
 
 WORKDIR /go/src/app
 
 ARG GO_ARCH
-ARG GIT_ACCESS_TOKEN_USR
-ARG GIT_ACCESS_TOKEN_PWD
-ENV GO_ARCH $GO_ARCH
-ENV GIT_ACCESS_TOKEN_USR $GIT_ACCESS_TOKEN_USR
-ENV GIT_ACCESS_TOKEN_PWD $GIT_ACCESS_TOKEN_PWD
+ENV GO_ARCH=$GO_ARCH
 COPY src ./src
-RUN echo "machine github.com login ${GIT_ACCESS_TOKEN_USR} password ${GIT_ACCESS_TOKEN_PWD}">> ~/.netrc; chmod 600 ~/.netrc
+RUN ls -l /run/
+RUN --mount=type=secret,id=tk-un,env=GIT_ACCESS_TOKEN_USR \
+    --mount=type=secret,id=tk-pw,env=GIT_ACCESS_TOKEN_PWD \
+    echo "machine github.com login ${GIT_ACCESS_TOKEN_USR} password ${GIT_ACCESS_TOKEN_PWD}" >> ~/.netrc; chmod 600 ~/.netrc
 RUN cd ./src; go env -w GOPRIVATE=github.com/ingka-group-digital/*; go mod download; \
-    GOOS=linux CGO_ENABLED=0 GOARCH=amd64 go build -o /go/src/app/bin/dispatcher ./dispatcher/
+    GOOS=linux CGO_ENABLED=1 GOARCH=amd64 go build -o /go/src/app/bin/serverless-runner ./cmd/
+RUN rm ~/.netrc
 
 # 18.04 --> 24.04 due to latest (3/6/2025) rclone dependency
 FROM artifactory.cloud.ingka-system.cn/ccoecn-docker-virtual/ubuntu:24.04
 
 ARG MNS_URL
-ARG ACCESS_KEY
-ARG SECRET_KEY
-ARG REGION 
-ARG REPO_ORG_NAME
-ARG REPO_ORG_URL 
 ARG TF_VER 
-ARG TF_PLATFORM 
-ARG IMAGE_RETRIEVE_USERNAME
-ARG IMAGE_RETRIEVE_PWD 
-ARG IMAGE_RETRIEVE_SERVER
+ARG TF_PLATFORM
 ARG LOCAL_MODE
-ARG GITENT_TK
-ARG GITHUB_TK
-ARG SLS_ENC_KEY
-ARG ALLEN_DB_HOST
-ARG ALLEN_DB_PORT
-ARG ALLEN_DB_USR
-ARG ALLEN_DB_PWD
-ARG ALLEN_DB_DBNAME
-ARG ALLEN_DB_TABLE
-ARG CTX_USERNAME
-ARG CTX_PWD
 ARG SLS_TF_CTL
 
-ENV TF_VAR_IMAGE_RETRIEVE_USERNAME=$IMAGE_RETRIEVE_USERNAME
-ENV TF_VAR_IMAGE_RETRIEVE_PWD=$IMAGE_RETRIEVE_PWD
-ENV TF_VAR_IMAGE_RETRIEVE_SERVER=$IMAGE_RETRIEVE_SERVER
-ENV TF_VAR_MNS_URL=$MNS_URL 
-ENV REPO_ORG_URL=$REPO_ORG_URL
-ENV REPO_ORG_NAME=$REPO_ORG_NAME
-ENV ALICLOUD_ACCESS_KEY=$ACCESS_KEY
-ENV ALICLOUD_SECRET_KEY=$SECRET_KEY
-ENV ALICLOUD_REGION=$REGION 
-ENV SLS_GITENT_TK=$GITENT_TK
-ENV SLS_GITHUB_TK=$GITHUB_TK
-ENV SLS_ENC_KEY=$SLS_ENC_KEY
-ENV ALLEN_DB_HOST=$ALLEN_DB_HOST
-ENV ALLEN_DB_PORT=$ALLEN_DB_PORT
-ENV ALLEN_DB_USR=$ALLEN_DB_USR
-ENV ALLEN_DB_PWD=$ALLEN_DB_PWD
-ENV ALLEN_DB_DBNAME=$ALLEN_DB_DBNAME
-ENV ALLEN_DB_TABLE=$ALLEN_DB_TABLE
-ENV contextusername=$CTX_USERNAME
-ENV contextpassword=$CTX_PWD
+ENV TF_VAR_MNS_URL=$MNS_URL
 
 RUN apt-get update -y -q && apt-get upgrade -y -q && \
     apt-get install -y \
@@ -81,7 +43,7 @@ RUN wget https://releases.hashicorp.com/terraform/${TF_VER}/terraform_${TF_VER}_
     unzip terraform_${TF_VER}_linux_${TF_PLATFORM}.zip && cp ./terraform /usr/local/bin/ && rm ./terraform && \
     rm ./terraform_${TF_VER}_linux_${TF_PLATFORM}.zip; echo 200 > /tmp/healthy
 
-COPY --from=builder /go/src/app/bin/dispatcher ./dispatcher
+COPY --from=builder /go/src/app/bin/serverless-runner ./serverless-runner
 COPY src/_depsh ./_depsh
 RUN if [ "$SLS_TF_CTL" != "go" ] ; then cp -rf ./_depsh/*.sh ./; fi; rm -rf ./_depsh
 COPY runner/ ./runner/
@@ -90,10 +52,14 @@ COPY module/ ./module/
 COPY template/ ./template/
 COPY src/certs/ca.cert.pem ./certs/
 COPY src/certs/ca.key.pem ./certs/
+RUN --mount=type=secret,id=kafka-ca,env=KAFKA_INS_CA_CERT \
+    echo $(echo ${KAFKA_INS_CA_CERT} | base64 -d) > /go/bin/certs/kafka.ins.ca.cert;
 
 # workaround for network issue: https://github.com/ingka-group-digital/serverless-hosted-runner/issues/42
 RUN mkdir /go/bin/tf_plugin_cache && export TF_PLUGIN_CACHE_DIR="/go/bin/tf_plugin_cache" && \
     cp -rf ./runner/ali ./init_tf; cd ./init_tf && \
+    terraform init && cd ..; rm -rf ./init_tf && \
+    cp -rf ./runner/azure ./init_tf; cd ./init_tf && \
     terraform init && cd ..; rm -rf ./init_tf
 
 EXPOSE 61201

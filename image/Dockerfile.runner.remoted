@@ -1,26 +1,18 @@
-FROM artifactory.cloud.ingka-system.cn/ccoecn-docker-virtual/golang:1.24.0 As builder
+FROM artifactory.cloud.ingka-system.cn/ccoecn-docker-virtual/golang:1.25.0 AS builder
 
 WORKDIR /go/src/app
 
 ARG GO_ARCH
-ENV GO_ARCH $GO_ARCH
+ENV GO_ARCH=$GO_ARCH
 COPY src ./src
 RUN cd ./src; go mod download; \
-    GOOS=linux CGO_ENABLED=0 GOARCH=amd64 go build -o /go/src/app/bin/runner ./runner/
+    GOOS=linux CGO_ENABLED=0 GOARCH=amd64 go build -o /go/src/app/bin/serverless-runner ./cmd/
 
 FROM artifactory.cloud.ingka-system.cn/ccoecn-docker-virtual/ubuntu:22.04  
 
 ARG SHR_C_T
-ARG RUNNER_TOKEN
 ARG MNS_URL
-ARG ACCESS_KEY
-ARG SECRET_KEY
-ARG REGION  
-ARG RUNNER_PLATFORM 
-ARG IMAGE_RETRIEVE_USERNAME
-ARG IMAGE_RETRIEVE_PWD 
-ARG IMAGE_RETRIEVE_SERVER
-ARG SLS_ENC_KEY
+ARG RUNNER_PLATFORM
 # docker paras
 ARG CHANNEL=stable
 ARG DOCKER_VERSION=24.0.7
@@ -31,17 +23,9 @@ ARG DOCKER_GROUP_GID=121
 ARG ei=14
 ENV DEBIAN_FRONTEND=noninteractive
 
-ENV RUNNER_PLATFORM $RUNNER_PLATFORM
-ENV TF_VAR_RUNNER_TOKEN $RUNNER_TOKEN 
-ENV TF_VAR_MNS_URL $MNS_URL
-ENV ALICLOUD_ACCESS_KEY $ACCESS_KEY
-ENV ALICLOUD_SECRET_KEY $SECRET_KEY
-ENV ALICLOUD_REGION $REGION 
-ENV TF_VAR_IMAGE_RETRIEVE_USERNAME $IMAGE_RETRIEVE_USERNAME
-ENV TF_VAR_IMAGE_RETRIEVE_PWD $IMAGE_RETRIEVE_PWD
-ENV TF_VAR_IMAGE_RETRIEVE_SERVER $IMAGE_RETRIEVE_SERVER
-ENV RUNNER_ALLOW_RUNASROOT "1"
-ENV SLS_ENC_KEY $SLS_ENC_KEY
+ENV RUNNER_PLATFORM=$RUNNER_PLATFORM
+ENV TF_VAR_MNS_URL=$MNS_URL
+ENV RUNNER_ALLOW_RUNASROOT="1"
 
 RUN apt-get update -y \
     && apt-get install -y software-properties-common \
@@ -106,7 +90,7 @@ RUN export ARCH=$(echo ${RUNNER_PLATFORM}) \
 
 WORKDIR /go/bin
 
-COPY --from=builder /go/src/app/bin/runner ./runner
+COPY --from=builder /go/src/app/bin/serverless-runner ./serverless-runner
 COPY src/runner/*.sh ./
 
 RUN GH_RUNNER_VERSION=${GH_RUNNER_VERSION:-$(curl --silent "https://api.github.com/repos/actions/runner/releases/latest" | grep tag_name | sed -E 's/.*"v([^"]+)".*/\1/')} \
@@ -119,7 +103,7 @@ RUN GH_RUNNER_VERSION=${GH_RUNNER_VERSION:-$(curl --silent "https://api.github.c
     mkdir -p ~/.ssh
 
 # #### daemond ssh remote. this can be disabled after ali ECI finish dind support 
-ENV DOCKER_HOST "ssh://root@serverless.dockerd.com"
+ENV DOCKER_HOST="ssh://root@serverless.dockerd.com"
 COPY template/dockerd/config /root/.ssh/config
 COPY template/dockerd/serverless-runner-docerd-secrets.pem /root/.ssh/serverless-runner-docerd-secrets.pem
 RUN sudo chmod 600 /root/.ssh/serverless-runner-docerd-secrets.pem

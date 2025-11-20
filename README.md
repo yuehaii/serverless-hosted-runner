@@ -1,6 +1,8 @@
 # Serverless-hosted-runner
 
+[![Go Report Card](https://goreportcard.com/badge/yuehaii/serverless-hosted-runner "Go Report Card")](https://goreportcard.com/report/yuehaii/serverless-hosted-runner)
 [![CodeQL](https://github.com/ingka-group-digital/serverless-hosted-runner/actions/workflows/_codeql.yml/badge.svg)](https://github.com/ingka-group-digital/serverless-hosted-runner/actions/workflows/_codeql.yml)
+[![Lint](https://github.com/ingka-group-digital/serverless-hosted-runner/actions/workflows/_linter.yml/badge.svg)](https://github.com/ingka-group-digital/serverless-hosted-runner/actions/workflows/_linter.yml)
 
 ## Introduction
 This application is a kind of Github Action [Self-hosted Runner](https://docs.github.com/en/actions/hosting-your-own-runners/managing-self-hosted-runners/about-self-hosted-runners).
@@ -89,11 +91,22 @@ or run below command for lazy registration
 make lazy_install ralias=<registration_alias>
 ```
 
-## CCOECN centralized dispatcher
-If you don't want to deploy dispacher. You can use CCOECN team's dispacher instead. Below are steps:
+## Cloud Hosting China centralized dispatcher
+If you don't want to deploy dispacher. You can use Cloud Hosting China team's dispacher instead. Below are steps:
 1. Assign 'l-ccoecn-a-itcnshg' as Admin of your Repo/Org. 
-2. Prepare your run-on labels, charge labels, and the repos names.
-4. Ping hayue2 on teams for application. 
+2. Prepare your run-on labels, charge labels, and the repos names. Then submit a [Jira request](https://jira.digital.ingka.com/servicedesk/customer/portal/3/create/6584) for application. We will collect the information for registration.
+4. Ping hayue2 on Teams for new registration. 
+5. And if you need to update the registration. Please create a pull request for your regisration motification. Then ping hayue2 on Teams for approval. Please follow [conventional commits](https://www.conventionalcommits.org/en/v1.0.0/) guidelines for your pull request. e.g
+```plain
+  feat: a new feature
+  fix: a bug fix
+  docs: documentation changes
+  chores: changes to the build process or auxiliary tools and libraries such as documentation generation
+  refactor: a code change that neither fixes a bug nor adds a feature
+  test: adding missing tests or correcting existing tests
+  ci: changes to our CI configuration files and scripts
+  cd: changes to our CD configuration files and scripts
+```
 
 ## Dynamic runner size
 Runner CPU and memory size can be configured in lazy configuration or Allen configuration. We also provide a workflow level dynamic runner size. Please use it with customized label or default label. E.g:
@@ -109,6 +122,39 @@ Runner virtial switch and security group can also be confgured via workflow run-
     runs-on: 
       labels: [serverless-hosted-runner, vsw-xxxxx, sg-xxxxx]
 ```
+
+## Event agent mode
+To improve the latency and reduce the frequent git API call caused [X-Ratelimit-Limit throttling](https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api). We introduced the event agent mode. 
+To enable the event agent, please config your repository and registration as below.
+1. Navigate to your organization or repository Settings --> Webhooks --> Add webhook. Set the webhook configuration as below.
+```plain
+   Payload URL: https://xxxxx (please ping hayue2 on Teams for hook url)
+   Content type: application/json
+   SSL verification: Enable SSL verification
+   Let me select individual events: Workflow jobs
+   Active: checked
+```
+2. Create a pull request to edit your repostiory's [PullInterval](https://github.com/ingka-group-digital/serverless-hosted-runner/blob/main/registration/Registration_test.mk#L81C221-L81C233) configuration as 300. It will reduce the pull frequency. Then deploy the registration.
+3. We suggest to enable such event agent for repositorys under https://github.com/ingka-group-digital. Because this organization's git API limitation is low compared with enterprise git server and easy to trigger the git API server throttling. 
+
+## Dynamic Tenant
+There are rare cases that user need to run workflows in different tenant under same repository. But if you have such requirement, please register the repository in different tenant with different run-on labels. \
+Below is an example using dynamic labels for different tenant. This user has 3 tenants for test, dev and production. The same repository register runner in those three tenents with different run-on label: 'serverless-native-run-test', 'serverless-native-run-dev' or 'serverless-native-run-prod'.
+```yaml
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        description: 'deployment environment/tenant'
+        required: true
+        default: 'test'
+        options: 
+        - test
+        - dev
+        - prod
+
+  runs-on: ["serverless-native-run-${{ inputs.environment }}", cpu-1.0, memory-2.0]
+``` 
 
 ## Customized image
 Runner support repository and workflow level image specification. The repo level image can be specified by 'ImageVersion' configuration. And worlflow level image can be configured with below runs-on label.
@@ -137,6 +183,10 @@ For Azure cloud, please follow below configuration.
 1. Please add the gcp environment registration in [CI workflow](https://github.com/ingka-group-digital/serverless-hosted-runner/blob/main/.github/workflows/register_test_cd.yml#L87) with [Actions secrets and variables](https://github.com/ingka-group-digital/serverless-hosted-runner/settings/secrets/actions). Then  add [it](https://github.com/ingka-group-digital/serverless-hosted-runner/blob/main/registration/Registration_test.mk#L21C25-L21C46) into the tenant registration.
 2. Running the tenant registration workflow and select "cloud provider" as "gcp".
 3. Dind supported in GCP cloud. If you need to run docker in docker, please set the '[GcpDind](https://github.com/ingka-group-digital/serverless-hosted-runner/blob/main/Registration.mk#L10C251-L10C258)' configuration as true. It will setup runner in GCP Batch Job. If you don't need ot use DinD, please set 'GcpDind' as false, the runner will be created in GCP Cloud run job.
+### Hybrid Cloud
+Serverless runner also support bybrid cloud. Its mircor services can be deployed into different cloud. For example, you can deploy the dispacher into Cloud Hosting China teams' Ali tenant, and deloy the runner into your own Azure subscription or GCP project.
+1. The hybrid cloud can be configured per repository. You can create a registration and configure the runner Ali/Azure/GCP cloud information in it.
+2. There is a [sample](https://github.com/ingka-group-digital/serverless-hosted-runner/blob/main/registration/Registration_test.mk#L79C1-L79C17) for reference 
 
 ## Known issue
 CI building may raise "[signal kill](https://github.com/beego/wetalk/issues/32)" error if the runner memory is not enough. You can add label as below to increase the memory size. 

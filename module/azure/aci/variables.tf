@@ -2,8 +2,8 @@ variable aci_group {
     description = "all aci vars definition"
     type = object ({
         name = optional(string, "serverless-hosted-runner")
-        # location = optional(string, "chinanorth3")
-        location = optional(string, "chinaeast2")
+        location = optional(string, "chinanorth3")
+        # location = optional(string, "chinaeast2")
         resource_group_name = string
         subnet_ids = optional(string, "")
         # security block available on this sku. but such sku not available in cn region
@@ -50,6 +50,7 @@ variable aci_container {
         runner = "aci", 
       })
       tf_ctl = optional(string, "go") 
+      repo_reg_tk = optional(string, "")
       dis_ip = optional(string, "")
       cloud_pr = optional(string, "azure")
       ctx_log_level = optional(string, "13")
@@ -86,3 +87,63 @@ variable aci_container {
     }) 
 }
    
+variable aci_container_env_keys {
+    description = "aci container environment keys"
+    type =  object({
+      image_retrieve_server = optional(string, "TF_VAR_IMAGE_RETRIEVE_SERVER")
+      image_retrieve_uname = optional(string, "TF_VAR_IMAGE_RETRIEVE_USERNAME")
+      image_retrieve_psw = optional(string, "TF_VAR_IMAGE_RETRIEVE_PWD")
+      ctx_username = optional(string, "contextusername")
+      ctx_pwd = optional(string, "contextpassword")
+      var_ctx_username = optional(string, "TF_VAR_CTX_USERNAME")
+      var_ctx_pwd = optional(string, "TF_VAR_CTX_PWD")
+      kafka_endpoint = optional(string, "KAFKA_INS_ENDPOINT")
+      kafka_topic = optional(string, "KAFKA_INS_TOPIC")
+      kafka_consumer = optional(string, "KAFKA_INS_CONSUMER")
+      kafka_username = optional(string, "KAFKA_INS_USERNAME")
+      kafka_pwd = optional(string, "KAFKA_INS_PWD")
+      kafka_ca = optional(string, "KAFKA_INS_CA_CERT")
+      allan_db_host = optional(string, "ALLEN_DB_HOST")
+      allan_db_port = optional(string, "ALLEN_DB_PORT")
+      allan_db_usr = optional(string, "ALLEN_DB_USR")
+      allan_db_pwd = optional(string, "ALLEN_DB_PWD")
+      allan_db_dbname = optional(string, "ALLEN_DB_DBNAME")
+      allan_db_table = optional(string, "ALLEN_DB_TABLE")
+      git_ent_tk = optional(string, "SLS_GITENT_TK")
+      git_hub_tk = optional(string, "SLS_GITHUB_TK")
+      enc_key = optional(string, "SLS_ENC_KEY")
+      var_enc_key = optional(string, "TF_VAR_SLS_ENC_KEY")
+      azure_acr_server = optional(string, "AZURE_ACR_SERVER")
+      azure_acr_username = optional(string, "AZURE_ACR_USRNAME")
+      azure_acr_pwd = optional(string, "AZURE_ACR_PWD")
+      var_azure_acr_server = optional(string, "TF_VAR_AZURE_ACR_SERVER")
+      var_azure_acr_username = optional(string, "TF_VAR_AZURE_ACR_USRNAME")
+      var_azure_acr_pwd = optional(string, "TF_VAR_AZURE_ACR_PWD")
+    })
+}
+
+variable aci_container_env_vals {
+    description = "aci container environment values"
+    type =  object({
+      ctx_username_val = string
+      ctx_pwd_val = string
+      kafka_endpoint_val = string
+      kafka_topic_val = string
+      kafka_consumer_val = string
+      kafka_username_val = string
+      kafka_pwd_val = string
+      kafka_ca_val = string
+      allan_db_host_val = string
+      allan_db_port_val = string
+      allan_db_usr_val = string
+      allan_db_pwd_val = string
+      allan_db_dbname_val = string
+      allan_db_table_val = string
+      git_ent_tk_val = string
+      git_hub_tk_val = string
+      enc_key_val = string
+      azure_acr_server_val = string
+      azure_acr_username_val = string
+      azure_acr_pwd_val = string
+    })
+}

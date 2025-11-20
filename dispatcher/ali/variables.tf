@@ -34,6 +34,87 @@ variable "IMAGE_RETRIEVE_PWD"  {
     type=string 
     default="none" 
 }  
+variable "CTX_USERNAME"  { 
+    type=string 
+    default="none" 
+} 
+variable "CTX_PWD"  { 
+    type=string 
+    default="none" 
+} 
+variable "KAFKA_INS_ENDPOINT"  { 
+    type=string 
+    default="none" 
+} 
+variable "KAFKA_INS_TOPIC"  { 
+    type=string 
+    default="none" 
+} 
+variable "KAFKA_INS_CONSUMER"  { 
+    type=string 
+    default="none" 
+} 
+variable "KAFKA_INS_USERNAME"  { 
+    type=string 
+    default="none" 
+} 
+variable "KAFKA_INS_PWD"  { 
+    type=string 
+    default="none" 
+} 
+variable "KAFKA_INS_CA_CERT"  { 
+    type=string 
+    default="none" 
+} 
+variable "ALLEN_DB_HOST"  { 
+    type=string 
+    default="none" 
+} 
+variable "ALLEN_DB_PORT"  { 
+    type=string 
+    default="none" 
+} 
+variable "ALLEN_DB_USR"  { 
+    type=string 
+    default="none" 
+} 
+variable "ALLEN_DB_PWD"  { 
+    type=string 
+    default="none" 
+} 
+variable "ALLEN_DB_DBNAME"  { 
+    type=string 
+    default="none" 
+} 
+variable "ALLEN_DB_TABLE"  { 
+    type=string 
+    default="none" 
+}
+variable "SLS_GITENT_TK"  { 
+    type=string 
+    default="none" 
+} 
+variable "SLS_GITHUB_TK"  { 
+    type=string 
+    default="none" 
+}
+variable "SLS_ENC_KEY"  { 
+    type=string 
+    default="none" 
+}
+variable "AZURE_ACR_SERVER"  { 
+    type=string 
+    default="none" 
+}
+variable "AZURE_ACR_USRNAME"  { 
+    type=string 
+    default="none" 
+}
+variable "AZURE_ACR_PWD"  { 
+    type=string 
+    default="none" 
+}
+
 variable "subnet_ids"  { 
     type=string 
     default="none" 

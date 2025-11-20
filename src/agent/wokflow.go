@@ -19,7 +19,7 @@ var (
 	Proto             = "https://"
 	WfGitDM           = "github.com"
 	EntDM             = "git.build.ingka.ikea.com"
-	ApiPath           = "/api/v3"
+	APIPath           = "/api/v3"
 	GitDM             = "api.github.com"
 	WfList            = "/actions/runs"
 	RepoType          = "Repo"
@@ -34,30 +34,30 @@ var (
 )
 
 type WorkFlow struct {
-	t           string
-	name        string
-	url         string
-	org         string
-	repo        string
-	repos       []string
-	ent         bool
-	runid       string
-	tk          string
-	runner      string
-	jobid       string
-	create      common.CreateRunner
-	destroy     common.DestroyRunner
-	release     common.ReleaseRunner
-	check       common.CheckRunner
-	iv          int
-	labels      string
-	run_last_h  int
-	complete_iv int
+	t          string
+	name       string
+	url        string
+	org        string
+	repo       string
+	repos      []string
+	ent        bool
+	runid      string
+	tk         string
+	runner     string
+	jobid      string
+	create     common.CreateRunner
+	destroy    common.DestroyRunner
+	release    common.ReleaseRunner
+	check      common.CheckRunner
+	iv         int
+	labels     string
+	runLastH   int
+	completeIv int
 }
 
 func CreateWorkflowAgent(t string, name string, url string, crt common.CreateRunner, des common.DestroyRunner,
 	rel common.ReleaseRunner, ck common.CheckRunner, repo string, org string, iv int, labels string) Agent {
-	return &WorkFlow{t, name, url, org, repo, nil, false, "", "", "", "", crt, des, rel, ck, iv, labels, -2, 1200}
+	return &WorkFlow{t, name, url, org, repo, nil, false, "", "", "", "", crt, des, rel, ck, iv, labels, -2, 24 * iv}
 }
 
 func (wf *WorkFlow) InitAgent() {
@@ -85,9 +85,10 @@ func (wf WorkFlow) NotifyAgent(msg string) {
 }
 
 func (wf WorkFlow) checkWorkflows(wftype string) {
-	if wf.t == RepoType {
+	switch wf.t {
+	case RepoType:
 		wf.checkRepoWorkflows(wftype)
-	} else if wf.t == OrgType {
+	case OrgType:
 		wf.checkOrgWorkflows(wftype)
 	}
 }
@@ -95,8 +96,8 @@ func (wf WorkFlow) checkWorkflows(wftype string) {
 func (wf WorkFlow) monitorOnQueued() {
 	for {
 		wf.checkWorkflows(WfStatusQueued)
-		logrus.Infof("monitorOnQueued, wait " + strconv.Itoa(wf.iv) +
-			" seconds and scan the org:" + wf.org + " repo:" + wf.repo + " workflows again..")
+		logrus.Infof("monitorOnQueued, wait %s seconds and scan the org:%s repo:%s workflows again",
+			strconv.Itoa(wf.iv), wf.org, wf.repo)
 		time.Sleep(time.Duration(wf.iv) * time.Second)
 	}
 }
@@ -104,9 +105,9 @@ func (wf WorkFlow) monitorOnQueued() {
 func (wf WorkFlow) monitorOnComplete() {
 	for {
 		wf.checkWorkflows(WfStatusCompleted)
-		logrus.Infof("monitorOnComplete, wait " + strconv.Itoa(wf.complete_iv) +
-			" seconds and scan the org:" + wf.org + " repo:" + wf.repo + " workflows again..")
-		time.Sleep(time.Duration(wf.complete_iv) * time.Second)
+		logrus.Infof("monitorOnComplete, wait %s seconds and scan the org:%s repo:%s workflows again",
+			strconv.Itoa(wf.completeIv), wf.org, wf.repo)
+		time.Sleep(time.Duration(wf.completeIv) * time.Second)
 	}
 }
 
@@ -120,7 +121,7 @@ func (wf *WorkFlow) checkOrgWorkflows(wftype string) {
 	logrus.Infof("begin checkOrgWorkflows...")
 	reps := wf.getRepos()
 
-	// TODO: should we use goroutine? it may cause possible git API limit reaching caused deny issue
+	// TODO: we can NOT use goroutine. it may cause possible git API limit reaching caused deny issue
 	// ref: https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api
 	//      < 100 concurrent requests
 	//      < 5000 git / 15000 Enteprise per hour
@@ -136,7 +137,8 @@ func (wf *WorkFlow) checkOrgWorkflows(wftype string) {
 func (wf *WorkFlow) checkQueuedCompleteRun(runs common.WorkflowRuns, rep common.Repository) {
 	for _, run := range runs.WorkflowRuns {
 		logrus.Infof("checking wf run %s, status %s, conclusion %s", run.Name, run.Status, run.Conclusion)
-		if run.Status == WfStatusQueued {
+		switch run.Status {
+		case WfStatusQueued:
 			wf.runid = strconv.FormatInt(run.ID, 10)
 			jobs := wf.getJobs()
 			num := 0
@@ -154,7 +156,7 @@ func (wf *WorkFlow) checkQueuedCompleteRun(runs common.WorkflowRuns, rep common.
 					go wf.create(WfStatusQueued, wf.runner, wf.repo, wf.url, wf.org, rep.Owner.Login, job.Labels)
 				}
 			}
-		} else if run.Status == WfStatusCompleted {
+		case WfStatusCompleted:
 			wf.runid = strconv.FormatInt(run.ID, 10)
 			jobs := wf.getJobs()
 			for _, job := range jobs.Jobs {
@@ -181,29 +183,32 @@ func (wf *WorkFlow) checkRepoRuns(rep common.Repository, wftype string) {
 	logrus.Infof("checkRepoRuns, checking repo %s...", rep.Name)
 	wf.repo = rep.Name
 
-	if wftype == WfStatusQueued {
-		queued_runs := wf.getWfQueuedRuns()
-		logrus.Infof("checkRepoRuns, queued run number: %d", queued_runs.TotalCount)
-		wf.checkQueuedCompleteRun(queued_runs, rep)
-	} else if wftype == WfStatusCompleted {
-		complete_runs := wf.getWfClosedRuns()
-		logrus.Infof("checkRepoRuns, complete run number: %d", complete_runs.TotalCount)
-		wf.checkQueuedCompleteRun(complete_runs, rep)
+	switch wftype {
+	case WfStatusQueued:
+		queuedRuns := wf.getWfQueuedRuns()
+		logrus.Infof("checkRepoRuns, queued run number: %d", queuedRuns.TotalCount)
+		wf.checkQueuedCompleteRun(queuedRuns, rep)
+	case WfStatusCompleted:
+		completeRuns := wf.getWfClosedRuns()
+		logrus.Infof("checkRepoRuns, complete run number: %d", completeRuns.TotalCount)
+		wf.checkQueuedCompleteRun(completeRuns, rep)
 	}
 }
 
-func (wf WorkFlow) getUrl(op string) string {
+func (wf WorkFlow) getURL(op string) string {
 	pref := Proto + GitDM
 	if wf.ent {
-		pref = Proto + EntDM + ApiPath
+		pref = Proto + EntDM + APIPath
 	}
-	if op == ListRepoOps {
+
+	switch op {
+	case ListRepoOps:
 		return pref + "/orgs/" + wf.org + "/repos"
-	} else if op == ListRunsOps {
+	case ListRunsOps:
 		return pref + "/repos/" + wf.org + "/" + wf.repo + WfList + "?per_page=100"
-	} else if op == ListJobsOps {
+	case ListJobsOps:
 		return pref + "/repos/" + wf.org + "/" + wf.repo + WfList + "/" + wf.runid + "/jobs"
-	} else if op == GetRepoDetailOps {
+	case GetRepoDetailOps:
 		logrus.Infof("pref %s, wf.org %s, wf.repo %s", pref, wf.org, wf.repo)
 		return pref + "/repos/" + wf.org + "/" + wf.repo
 	}
@@ -224,7 +229,8 @@ func (wf WorkFlow) request(op string, para string) interface{} {
 	client := http.Client{
 		Timeout: time.Duration(60 * time.Second),
 	}
-	request, _ := http.NewRequest("GET", wf.getUrl(op)+para, nil)
+	requestURL := wf.getURL(op) + para
+	request, _ := http.NewRequest("GET", requestURL, nil)
 	request.Header.Set("Accept", "application/vnd.github+json")
 	request.Header.Set("Authorization", "Bearer "+wf.tk)
 	request.Header.Set("X-GitHub-Api-Version", "2022-11-28")
@@ -237,41 +243,56 @@ func (wf WorkFlow) request(op string, para string) interface{} {
 			if err == nil {
 				bodyString = string(bodyBytes)
 			}
-			logrus.Errorf("Unable to get %s, %s, %s", op, err, bodyString)
+			logrus.Errorf("Unable to get %s, %s, %s, %s", op, err, bodyString, requestURL)
 		} else {
-			logrus.Errorf("Unable to get %s, %s", op, err)
+			logrus.Errorf("Unable to get %s, %s, %s", op, err, requestURL)
 		}
 
 		fmt.Println(resp)
 		return nil
 	}
-	defer resp.Body.Close()
+
+	bodyClose := func() {
+		err := resp.Body.Close()
+		if err != nil {
+			logrus.Errorf("workflow request, fail to close body %v", err)
+		}
+	}
+	defer bodyClose()
 	return wf.response(op, resp.Body)
 }
 
 func (wf WorkFlow) response(op string, body io.Reader) interface{} {
 	data, _ := io.ReadAll(body)
 	// body.(io.ReadCloser).Close()
-	if op == ListRepoOps {
+
+	switch op {
+	case ListRepoOps:
 		reps := common.Repos{}
-		json.Unmarshal(data, &reps)
+		if err := json.Unmarshal(data, &reps); err != nil {
+			logrus.Errorf("workflow response, ListRepoOps fail to Unmarshal: %v", err)
+		}
 		for idx, item := range reps {
 			logrus.Infof("response rep %d, fullname %s, owner %s, name %s, svnurl %s", idx,
 				item.FullName, item.Owner.Login, item.Name, item.SvnURL)
 		}
 		return reps
-	} else if op == ListRunsOps {
+	case ListRunsOps:
 		runs := common.WorkflowRuns{}
-		json.Unmarshal(data, &runs)
+		if err := json.Unmarshal(data, &runs); err != nil {
+			logrus.Errorf("workflow response, ListRunsOps fail to Unmarshal: %v", err)
+		}
 		logrus.Infof("response run count: %d", runs.TotalCount)
 		for idx, item := range runs.WorkflowRuns {
 			logrus.Infof("response run %d, id %d, name %s, status %s, conclusion %s, url %s", idx,
 				item.ID, item.Name, item.Status, item.Conclusion, item.HTMLURL)
 		}
 		return runs
-	} else if op == ListJobsOps {
+	case ListJobsOps:
 		jobs := common.WorkflowJobs{}
-		json.Unmarshal(data, &jobs)
+		if err := json.Unmarshal(data, &jobs); err != nil {
+			logrus.Errorf("workflow response, ListJobsOps fail to Unmarshal: %v", err)
+		}
 		logrus.Infof("response job count %d", jobs.TotalCount)
 		for idx, item := range jobs.Jobs {
 			logrus.Infof("response job %d, id %d, runid %d, status %s", idx, item.ID, item.RunID, item.Status)
@@ -280,9 +301,11 @@ func (wf WorkFlow) response(op string, body io.Reader) interface{} {
 			}
 		}
 		return jobs
-	} else if op == GetRepoDetailOps {
+	case GetRepoDetailOps:
 		rep := common.Repository{}
-		json.Unmarshal(data, &rep)
+		if err := json.Unmarshal(data, &rep); err != nil {
+			logrus.Errorf("workflow response, GetRepoDetailOps fail to Unmarshal: %v", err)
+		}
 		logrus.Infof("response repo fullname %s", rep.FullName)
 		logrus.Infof("response repo, id %d, name %s, htmlurl %s, owner %s", rep.ID, rep.Name,
 			rep.HTMLURL, rep.Owner.Login)
@@ -306,7 +329,7 @@ func (wf WorkFlow) getWfQueuedRuns() common.WorkflowRuns {
 }
 
 func (wf WorkFlow) getWfClosedRuns() common.WorkflowRuns {
-	start := time.Now().Add(time.Duration(wf.run_last_h) * time.Hour)
+	start := time.Now().Add(time.Duration(wf.runLastH) * time.Hour)
 	end := time.Now()
 	// "&status=" + WfStatusCompleted
 	return wf.getWfRuns("&created=" + fmt.Sprintf("%d-%02d-%02dT%02d:%02d:%02dZ..%d-%02d-%02dT%02d:%02d:%02dZ",

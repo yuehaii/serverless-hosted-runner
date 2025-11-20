@@ -29,12 +29,12 @@ type DB struct {
 
 type PostgresDB struct {
 	DB
-	conn                                  string
-	db_handler                            *sql.DB
-	sslmode                               string
-	idx_id, msg_id, status_id, comment_id string
-	status_fail                           string
-	rows                                  *sql.Rows
+	conn                              string
+	dbHandler                         *sql.DB
+	sslmode                           string
+	idxID, msgID, statusID, commentID string
+	statusFail                        string
+	rows                              *sql.Rows
 }
 
 func CreatePostgresDB() IPostgresDB {
@@ -44,7 +44,7 @@ func CreatePostgresDB() IPostgresDB {
 		"id", "request_message", "state", "status_message", "Failed", nil}
 }
 
-func CreateMySqlDB(host, port, usr, pwd, db, table string) IDB {
+func CreateMySQLDB(host, port, usr, pwd, db, table string) IDB {
 	return nil
 }
 
@@ -59,9 +59,9 @@ func (pg *PostgresDB) Connect() error {
 		logrus.Errorf("Connect open postgres failure: %s", err)
 		return err
 	}
-	pg.db_handler = h
+	pg.dbHandler = h
 
-	err = pg.db_handler.Ping()
+	err = pg.dbHandler.Ping()
 	if err != nil {
 		logrus.Errorf("Connect ping postgres failure: %s", err)
 		pg.Disconnect()
@@ -72,18 +72,20 @@ func (pg *PostgresDB) Connect() error {
 }
 
 func (pg PostgresDB) Disconnect() {
-	pg.db_handler.Close()
+	if err := pg.dbHandler.Close(); err != nil {
+		logrus.Errorf("Disconnect db handler Close failure: %v", err)
+	}
 }
 
 func (pg *PostgresDB) ListRow(nin string) (*sql.Rows, error) {
-	sub_where_clause := `" where "` + pg.status_id + `"!='` + pg.status_fail + `'`
+	subWhereClause := `" where "` + pg.statusID + `"!='` + pg.statusFail + `'`
 	if nin != "" {
-		sub_where_clause += ` and "` + pg.idx_id + `" not in (` + nin + ")"
+		subWhereClause += ` and "` + pg.idxID + `" not in (` + nin + ")"
 	}
-	list_query := `SELECT "` + pg.idx_id + `", "` + pg.msg_id + `", "` +
-		pg.status_id + `", "` + pg.comment_id + `" FROM "` + pg.table + sub_where_clause
-	items, err := pg.db_handler.Query(list_query)
-	logrus.Infof("ListRow sql: %s", list_query)
+	listQuery := `SELECT "` + pg.idxID + `", "` + pg.msgID + `", "` +
+		pg.statusID + `", "` + pg.commentID + `" FROM "` + pg.table + subWhereClause
+	items, err := pg.dbHandler.Query(listQuery)
+	logrus.Infof("ListRow sql: %s", listQuery)
 	if err != nil {
 		logrus.Errorf("ListRow failure: %s", err)
 	}
@@ -92,18 +94,18 @@ func (pg *PostgresDB) ListRow(nin string) (*sql.Rows, error) {
 }
 
 func (pg PostgresDB) UpdateStatus(idx string, stat string, comm string) error {
-	err_stat := pg.UpdateField(pg.status_id, stat, idx)
-	err_comm := pg.UpdateField(pg.comment_id, comm, idx)
-	if err_stat != nil {
-		return err_stat
+	errStat := pg.UpdateField(pg.statusID, stat, idx)
+	errComm := pg.UpdateField(pg.commentID, comm, idx)
+	if errStat != nil {
+		return errStat
 	} else {
-		return err_comm
+		return errComm
 	}
 }
 
 func (pg PostgresDB) UpdateField(k string, v string, id string) error {
-	up_sql := `update "` + pg.table + `" set "` + k + `"='` + v + `' where "` + pg.idx_id + `"=` + id
-	_, err := pg.db_handler.Exec(up_sql)
+	upSQL := `update "` + pg.table + `" set "` + k + `"='` + v + `' where "` + pg.idxID + `"=` + id
+	_, err := pg.dbHandler.Exec(upSQL)
 	if err != nil {
 		logrus.Errorf("UpdateField Update failure: %s", err)
 	}
@@ -121,6 +123,8 @@ func (pg *PostgresDB) IterateRows(idx *string, msg *string, status *string, comm
 		return true, nil
 	}
 	fmt.Println("IterateRows finish parsing rows")
-	pg.rows.Close()
+	if err := pg.rows.Close(); err != nil {
+		logrus.Errorf("IterateRows Close failure: %v", err)
+	}
 	return false, nil
 }

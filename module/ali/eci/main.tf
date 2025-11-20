@@ -2,13 +2,13 @@
 locals {  
     base_cmds = var.eci_container.startup_cmd == "" ? [] : ["${var.eci_container.startup_cmd}"]  
     cmds = var.eci_container.runner_action == "none" ? concat(local.base_cmds, 
-        ["-v", var.eci_container.image_ver, "-r", var.eci_container.runner_lazy_regs, "-a", var.eci_container.runner_allen_regs, 
+        ["dispatcher", "-v", var.eci_container.image_ver, "-r", var.eci_container.runner_lazy_regs, "-a", var.eci_container.runner_allen_regs, 
         "-m", var.eci_container.ctx_log_level, "-c", var.eci_container.cloud_pr, "-t",var.eci_container.tf_ctl]) : concat(local.base_cmds, 
-        ["-t", var.eci_container.container_type, "-i", var.eci_container.runner_id, "-k", var.eci_container.runner_token, 
+        ["runner", "-t", var.eci_container.container_type, "-i", var.eci_container.runner_id, "-k", var.eci_container.runner_token, 
         "-l", var.eci_container.runner_repurl, "-n", var.eci_container.runner_repname, "-a", var.eci_container.runner_action, 
         "-o", var.eci_container.runner_orgname, "-p", var.eci_container.runner_orgowner, "-v", var.eci_container.image_ver,
         "-b", var.eci_container.runner_labels, "-g", var.eci_container.runner_group, "-m", var.eci_container.ctx_log_level,
-        "-c", var.eci_container.cloud_pr, "-d",var.eci_container.dis_ip]) 
+        "-c", var.eci_container.cloud_pr, "-d",var.eci_container.dis_ip, "-r",var.eci_container.repo_reg_tk]) 
     liveness_probe_period_seconds        = "10"
     liveness_probe_initial_delay_seconds = "5"
     liveness_probe_success_threshold     = "1"
@@ -70,6 +70,123 @@ resource "alicloud_eci_container_group" "serverless_eci_template" {
             key   = var.eci_container.environment_key
             value = var.eci_container.environment_val 
         } 
+        environment_vars { 
+            key   = var.eci_container_env_keys.image_retrieve_server
+            value = var.eci_group.image_retrieve_server
+        } 
+        environment_vars { 
+            key   = var.eci_container_env_keys.image_retrieve_uname
+            value = var.eci_group.image_retrieve_uname
+        } 
+        environment_vars { 
+            key   = var.eci_container_env_keys.image_retrieve_psw
+            value = var.eci_group.image_retrieve_psw
+        } 
+        environment_vars { 
+            key   = var.eci_container_env_keys.ctx_username
+            value = var.eci_container_env_vals.ctx_username_val
+        } 
+        environment_vars { 
+            key   = var.eci_container_env_keys.ctx_pwd
+            value = var.eci_container_env_vals.ctx_pwd_val
+        } 
+        environment_vars { 
+            key   = var.eci_container_env_keys.var_ctx_username
+            value = var.eci_container_env_vals.ctx_username_val
+        } 
+        environment_vars { 
+            key   = var.eci_container_env_keys.var_ctx_pwd
+            value = var.eci_container_env_vals.ctx_pwd_val
+        } 
+        environment_vars { 
+            key   = var.eci_container_env_keys.kafka_endpoint
+            value = var.eci_container_env_vals.kafka_endpoint_val
+        } 
+        environment_vars { 
+            key   = var.eci_container_env_keys.kafka_topic
+            value = var.eci_container_env_vals.kafka_topic_val
+        } 
+        environment_vars { 
+            key   = var.eci_container_env_keys.kafka_consumer
+            value = var.eci_container_env_vals.kafka_consumer_val
+        } 
+        environment_vars { 
+            key   = var.eci_container_env_keys.kafka_username
+            value = var.eci_container_env_vals.kafka_username_val
+        } 
+        environment_vars { 
+            key   = var.eci_container_env_keys.kafka_pwd
+            value = var.eci_container_env_vals.kafka_pwd_val
+        } 
+        environment_vars { 
+            key   = var.eci_container_env_keys.kafka_ca
+            value = var.eci_container_env_vals.kafka_ca_val
+        }  
+        environment_vars { 
+            key   = var.eci_container_env_keys.allan_db_host
+            value = var.eci_container_env_vals.allan_db_host_val
+        }  
+        environment_vars { 
+            key   = var.eci_container_env_keys.allan_db_port
+            value = var.eci_container_env_vals.allan_db_port_val
+        }  
+        environment_vars { 
+            key   = var.eci_container_env_keys.allan_db_usr
+            value = var.eci_container_env_vals.allan_db_usr_val
+        }  
+        environment_vars { 
+            key   = var.eci_container_env_keys.allan_db_pwd
+            value = var.eci_container_env_vals.allan_db_pwd_val
+        }  
+        environment_vars { 
+            key   = var.eci_container_env_keys.allan_db_dbname
+            value = var.eci_container_env_vals.allan_db_dbname_val
+        }  
+        environment_vars { 
+            key   = var.eci_container_env_keys.allan_db_table
+            value = var.eci_container_env_vals.allan_db_table_val
+        }  
+        environment_vars { 
+            key   = var.eci_container_env_keys.git_ent_tk
+            value = var.eci_container_env_vals.git_ent_tk_val
+        }  
+        environment_vars { 
+            key   = var.eci_container_env_keys.git_hub_tk
+            value = var.eci_container_env_vals.git_hub_tk_val
+        }  
+        environment_vars { 
+            key   = var.eci_container_env_keys.enc_key
+            value = var.eci_container_env_vals.enc_key_val
+        }  
+        environment_vars { 
+            key   = var.eci_container_env_keys.var_enc_key
+            value = var.eci_container_env_vals.enc_key_val
+        }  
+        environment_vars { 
+            key   = var.eci_container_env_keys.azure_acr_server
+            value = var.eci_container_env_vals.azure_acr_server_val
+        }
+        environment_vars { 
+            key   = var.eci_container_env_keys.azure_acr_username
+            value = var.eci_container_env_vals.azure_acr_username_val
+        }
+        environment_vars { 
+            key   = var.eci_container_env_keys.azure_acr_pwd
+            value = var.eci_container_env_vals.azure_acr_pwd_val
+        }
+        environment_vars { 
+            key   = var.eci_container_env_keys.var_azure_acr_server
+            value = var.eci_container_env_vals.azure_acr_server_val
+        }
+        environment_vars { 
+            key   = var.eci_container_env_keys.var_azure_acr_username
+            value = var.eci_container_env_vals.azure_acr_username_val
+        }
+        environment_vars { 
+            key   = var.eci_container_env_keys.var_azure_acr_pwd
+            value = var.eci_container_env_vals.azure_acr_pwd_val
+        }
+
         dynamic volume_mounts {
             for_each = var.eci_mount
             content {

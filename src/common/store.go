@@ -7,17 +7,20 @@ import (
 	"github.com/ingka-group-digital/app-monitor-agent/logrus"
 )
 
+var RegTokenReuse = map[string]string{}
+
 type Store interface {
 	Save()
 	GetKey() (string, string)
 	GetSecret() (string, string)
 	GetRegion() (string, string)
-	GetSecGpId() (string, string)
-	GetVSwitchId() (string, string)
+	GetSecGpID() (string, string)
+	GetVSwitchID() (string, string)
+	GetCloudProvider() (string, string)
 	GetPat() (string, string)
-	GetUrl() (string, string)
+	GetURL() (string, string)
 	GetSize() (string, string)
-	GetCpu() (string, string)
+	GetCPU() (string, string)
 	GetMemory() (string, string)
 	GetLabels() (string, string)
 	GetChargeLabels() (string, string)
@@ -27,13 +30,15 @@ type Store interface {
 	GetPreKey() string
 	GetPreSecret() string
 	GetPreRegion() string
-	GetPreSecGpId() string
-	GetPreVSwitchId() string
+	GetPreSecGpID() string
+	GetPreVSwitchID() string
+	GetPreCloudProvider() string
 	GetPrePat() string
-	GetPreUrl() string
+	GetPreURL() string
 	GetAPIEntTk() string
 	GetAPIGitTk() string
 	GetGcpCredential() (string, string)
+	GetRepoRegToken() (string, string)
 	GetGcpProject() (string, string)
 	GetGcpRegion() (string, string)
 	GetGcpSA() (string, string)
@@ -42,13 +47,13 @@ type Store interface {
 	GetGcpVpc() (string, string)
 	GetGcpSubnet() (string, string)
 	GetImageVersion() (string, string)
-	GetArmClientId() (string, string)
+	GetArmClientID() (string, string)
 	GetAciLocation() (string, string)
 	GetAciSku() (string, string)
 	GetAciNetworkType() (string, string)
 	GetArmClientSecret() (string, string)
-	GetArmSubscriptionId() (string, string)
-	GetArmTenantId() (string, string)
+	GetArmSubscriptionID() (string, string)
+	GetArmTenantID() (string, string)
 	GetArmEnvironment() (string, string)
 	GetArmRPRegistration() (string, string)
 	GetArmResourceGroupName() (string, string)
@@ -56,6 +61,7 @@ type Store interface {
 	GetArmLogAnalyticsWorkspaceID() (string, string)
 	GetArmLogAnalyticsWorkspaceKey() (string, string)
 	GetPreGcpCredential() string
+	GetPreRepoRegToken() string
 	GetPreGcpProject() string
 	GetPreGcpRegion() string
 	GetPreGcpSA() string
@@ -64,13 +70,13 @@ type Store interface {
 	GetPreGcpVpc() string
 	GetPreGcpSubnet() string
 	GetPreImageVersion() string
-	GetPreArmClientId() string
+	GetPreArmClientID() string
 	GetPreAciLocation() string
 	GetPreAciSku() string
 	GetPreAciNetworkType() string
 	GetPreArmClientSecret() string
-	GetPreArmSubscriptionId() string
-	GetPreArmTenantId() string
+	GetPreArmSubscriptionID() string
+	GetPreArmTenantID() string
 	GetPreArmEnvironment() string
 	GetPreArmRPRegistration() string
 	GetPreArmResourceGroupName() string
@@ -78,6 +84,7 @@ type Store interface {
 	IsDestory(string) bool
 	MarkDestory(string)
 	ResetDestory(string)
+	UpdateRepoRegToken(string)
 }
 
 func EnvStore(msg *PoolMsg, org string, repo string) Store {
@@ -105,18 +112,24 @@ func (store MsgStore) IsDestory(workflow string) bool {
 }
 
 func (store MsgStore) MarkDestory(workflow string) {
-	os.Setenv(workflow, workflow)
+	if err := os.Setenv(workflow, workflow); err != nil {
+		logrus.Errorf("MarkDestory Setenv failure: %v", err)
+	}
 }
 
 func (store MsgStore) ResetDestory(workflow string) {
-	os.Setenv(workflow, "")
+	if err := os.Setenv(workflow, ""); err != nil {
+		logrus.Errorf("ResetDestory Setenv failure: %v", err)
+	}
 }
 
 func (store MsgStore) get(key string) string {
 	return os.Getenv(key)
 }
 func (store MsgStore) set(key string, val string) {
-	os.Setenv(key, val)
+	if err := os.Setenv(key, val); err != nil {
+		logrus.Errorf("set Setenv failure: %v", err)
+	}
 }
 func (store MsgStore) msgKey(k string) string {
 	prefix := store.msg.Type + "_" + store.msg.Name + "_"
@@ -155,20 +168,20 @@ func (store MsgStore) setMsgPat() {
 	store.set(store.msgKey("PatPre"), pre)
 	store.set(store.msgKey("Pat"), store.msg.Pat)
 }
-func (store MsgStore) setMsgUrl() {
+func (store MsgStore) setMsgURL() {
 	pre, _ := store.msgItem("Url")
 	store.set(store.msgKey("UrlPre"), pre)
-	store.set(store.msgKey("Url"), store.msg.Url)
+	store.set(store.msgKey("Url"), store.msg.URL)
 }
 func (store MsgStore) setMsgSize() {
 	pre, _ := store.msgItem("Size")
 	store.set(store.msgKey("SizePre"), pre)
 	store.set(store.msgKey("Size"), store.msg.Size)
 }
-func (store MsgStore) setMsgCpu() {
+func (store MsgStore) setMsgCPU() {
 	pre, _ := store.msgItem("Cpu")
 	store.set(store.msgKey("CpuPre"), pre)
-	store.set(store.msgKey("Cpu"), store.msg.Cpu)
+	store.set(store.msgKey("Cpu"), store.msg.CPU)
 }
 func (store MsgStore) setMsgMemory() {
 	pre, _ := store.msgItem("Memory")
@@ -205,21 +218,30 @@ func (store MsgStore) setMsgRegion() {
 	store.set(store.msgKey("RegionPre"), pre)
 	store.set(store.msgKey("Region"), store.msg.Region)
 }
-func (store MsgStore) setMsgSecGpId() {
+func (store MsgStore) setMsgSecGpID() {
 	pre, _ := store.msgItem("SecGpId")
 	store.set(store.msgKey("SecGpIdPre"), pre)
-	store.set(store.msgKey("SecGpId"), store.msg.SecGpId)
+	store.set(store.msgKey("SecGpId"), store.msg.SecGpID)
 }
-func (store MsgStore) setMsgVSwitchId() {
+func (store MsgStore) setMsgVSwitchID() {
 	pre, _ := store.msgItem("VSwitchId")
 	store.set(store.msgKey("VSwitchIdPre"), pre)
-	store.set(store.msgKey("VSwitchId"), store.msg.VSwitchId)
+	store.set(store.msgKey("VSwitchId"), store.msg.VSwitchID)
 }
-
+func (store MsgStore) setMsgCloudProvider() {
+	pre, _ := store.msgItem("CloudProvider")
+	store.set(store.msgKey("CloudProviderPre"), pre)
+	store.set(store.msgKey("CloudProvider"), store.msg.CloudProvider)
+}
 func (store MsgStore) setMsgGcpCredential() {
 	pre, _ := store.msgItem("GcpCredential")
 	store.set(store.msgKey("GcpCredentialPre"), pre)
 	store.set(store.msgKey("GcpCredential"), store.msg.GcpCredential)
+}
+func (store MsgStore) setMsgRepoRegToken() {
+	pre, _ := store.msgItem("RepoRegToken")
+	store.set(store.msgKey("RepoRegTokenPre"), pre)
+	store.set(store.msgKey("RepoRegToken"), store.msg.RepoRegToken)
 }
 func (store MsgStore) setMsgGcpProject() {
 	pre, _ := store.msgItem("GcpProject")
@@ -261,10 +283,10 @@ func (store MsgStore) setMsgImageVersion() {
 	store.set(store.msgKey("ImageVersionPre"), pre)
 	store.set(store.msgKey("ImageVersion"), store.msg.ImageVersion)
 }
-func (store MsgStore) setMsgArmClientId() {
+func (store MsgStore) setMsgArmClientID() {
 	pre, _ := store.msgItem("ArmClientId")
 	store.set(store.msgKey("ArmClientIdPre"), pre)
-	store.set(store.msgKey("ArmClientId"), store.msg.ArmClientId)
+	store.set(store.msgKey("ArmClientId"), store.msg.ArmClientID)
 }
 func (store MsgStore) setMsgAciLocation() {
 	pre, _ := store.msgItem("AciLocation")
@@ -286,15 +308,15 @@ func (store MsgStore) setMsgArmClientSecret() {
 	store.set(store.msgKey("ArmClientSecretPre"), pre)
 	store.set(store.msgKey("ArmClientSecret"), store.msg.ArmClientSecret)
 }
-func (store MsgStore) setMsgArmSubscriptionId() {
+func (store MsgStore) setMsgArmSubscriptionID() {
 	pre, _ := store.msgItem("ArmSubscriptionId")
 	store.set(store.msgKey("ArmSubscriptionIdPre"), pre)
-	store.set(store.msgKey("ArmSubscriptionId"), store.msg.ArmSubscriptionId)
+	store.set(store.msgKey("ArmSubscriptionId"), store.msg.ArmSubscriptionID)
 }
-func (store MsgStore) setMsgArmTenantId() {
+func (store MsgStore) setMsgArmTenantID() {
 	pre, _ := store.msgItem("ArmTenantId")
 	store.set(store.msgKey("ArmTenantIdPre"), pre)
-	store.set(store.msgKey("ArmTenantId"), store.msg.ArmTenantId)
+	store.set(store.msgKey("ArmTenantId"), store.msg.ArmTenantID)
 }
 func (store MsgStore) setMsgArmEnvironment() {
 	pre, _ := store.msgItem("ArmEnvironment")
@@ -314,12 +336,12 @@ func (store MsgStore) setMsgArmResourceGroupName() {
 func (store MsgStore) setMsgArmSubnetID() {
 	pre, _ := store.msgItem("ArmSubnetID")
 	store.set(store.msgKey("ArmSubnetIDPre"), pre)
-	store.set(store.msgKey("ArmSubnetID"), store.msg.ArmSubnetId)
+	store.set(store.msgKey("ArmSubnetID"), store.msg.ArmSubnetID)
 }
 func (store MsgStore) setMsgArmLogAnalyticsWorkspaceID() {
 	pre, _ := store.msgItem("ArmLogAnalyticsWorkspaceID")
 	store.set(store.msgKey("ArmLogAnalyticsWorkspaceIDPre"), pre)
-	store.set(store.msgKey("ArmLogAnalyticsWorkspaceID"), store.msg.ArmLogAnaWorkspaceId)
+	store.set(store.msgKey("ArmLogAnalyticsWorkspaceID"), store.msg.ArmLogAnaWorkspaceID)
 }
 func (store MsgStore) setMsgArmLogAnalyticsWorkspaceKey() {
 	pre, _ := store.msgItem("ArmLogAnalyticsWorkspaceKey")
@@ -330,19 +352,21 @@ func (store MsgStore) setMsgArmLogAnalyticsWorkspaceKey() {
 func (store MsgStore) Save() {
 	store.setMsgName()
 	store.setMsgPat()
-	store.setMsgUrl()
+	store.setMsgURL()
 	store.setMsgSize()
 	store.setMsgKey()
 	store.setMsgSecret()
 	store.setMsgRegion()
-	store.setMsgSecGpId()
-	store.setMsgVSwitchId()
-	store.setMsgCpu()
+	store.setMsgSecGpID()
+	store.setMsgVSwitchID()
+	store.setMsgCloudProvider()
+	store.setMsgCPU()
 	store.setMsgMemory()
 	store.setMsgLabels()
 	store.setMsgChargeLabels()
 	store.setMsgRunnerGroup()
 	store.setMsgGcpCredential()
+	store.setMsgRepoRegToken()
 	store.setMsgGcpProject()
 	store.setMsgGcpRegion()
 	store.setMsgGcpSA()
@@ -351,19 +375,32 @@ func (store MsgStore) Save() {
 	store.setMsgGcpVpc()
 	store.setMsgGcpSubnet()
 	store.setMsgImageVersion()
-	store.setMsgArmClientId()
+	store.setMsgArmClientID()
 	store.setMsgAciLocation()
 	store.setMsgAciSku()
 	store.setMsgAciNetworkType()
 	store.setMsgArmClientSecret()
-	store.setMsgArmSubscriptionId()
-	store.setMsgArmTenantId()
+	store.setMsgArmSubscriptionID()
+	store.setMsgArmTenantID()
 	store.setMsgArmEnvironment()
 	store.setMsgArmRPRegistration()
 	store.setMsgArmResourceGroupName()
 	store.setMsgArmSubnetID()
 	store.setMsgArmLogAnalyticsWorkspaceID()
 	store.setMsgArmLogAnalyticsWorkspaceKey()
+}
+
+func (store MsgStore) UpdateRepoRegToken(token string) {
+	findKey := func(k string) string {
+		n, t := store.GetName()
+		return strings.Title(t) + "_" + n + "_" + k
+	}
+
+	pre, _ := store.msgItem("RepoRegToken")
+	store.set(findKey("RepoRegTokenPre"), pre)
+	store.set(findKey("RepoRegToken"), token)
+	RegTokenReuse[findKey("RepoRegTokenPre")] = pre
+	RegTokenReuse[findKey("RepoRegToken")] = token
 }
 
 func (store MsgStore) GetName() (string, string) {
@@ -396,13 +433,13 @@ func (store MsgStore) GetPat() (string, string) {
 	pat, pt := store.DefaultPatToRepo(pat, url, t)
 	return pat, pt
 }
-func (store MsgStore) GetUrl() (string, string) {
+func (store MsgStore) GetURL() (string, string) {
 	return store.msgItem("Url")
 }
 func (store MsgStore) GetSize() (string, string) {
 	return store.msgItem("Size")
 }
-func (store MsgStore) GetCpu() (string, string) {
+func (store MsgStore) GetCPU() (string, string) {
 	return store.msgItem("Cpu")
 }
 func (store MsgStore) GetMemory() (string, string) {
@@ -426,14 +463,31 @@ func (store MsgStore) GetSecret() (string, string) {
 func (store MsgStore) GetRegion() (string, string) {
 	return store.msgItem("Region")
 }
-func (store MsgStore) GetSecGpId() (string, string) {
+func (store MsgStore) GetSecGpID() (string, string) {
 	return store.msgItem("SecGpId")
 }
-func (store MsgStore) GetVSwitchId() (string, string) {
+func (store MsgStore) GetVSwitchID() (string, string) {
 	return store.msgItem("VSwitchId")
+}
+func (store MsgStore) GetCloudProvider() (string, string) {
+	return store.msgItem("CloudProvider")
 }
 func (store MsgStore) GetGcpCredential() (string, string) {
 	return store.msgItem("GcpCredential")
+}
+func (store MsgStore) GetRepoRegToken() (string, string) {
+	findKey := func(k string) string {
+		n, t := store.GetName()
+		return strings.Title(t) + "_" + n + "_" + k
+	}
+	val, t := store.msgItem("RepoRegToken")
+	if tk, ok := RegTokenReuse[findKey("RepoRegToken")]; ok {
+		logrus.Infof("RepoRegToken %s %s", tk, t)
+		return tk, t
+	} else {
+		logrus.Infof("RepoRegToken ori %s %v", val, ok)
+		return val, t
+	}
 }
 func (store MsgStore) GetGcpProject() (string, string) {
 	return store.msgItem("GcpProject")
@@ -459,7 +513,7 @@ func (store MsgStore) GetGcpSubnet() (string, string) {
 func (store MsgStore) GetImageVersion() (string, string) {
 	return store.msgItem("ImageVersion")
 }
-func (store MsgStore) GetArmClientId() (string, string) {
+func (store MsgStore) GetArmClientID() (string, string) {
 	return store.msgItem("ArmClientId")
 }
 func (store MsgStore) GetAciLocation() (string, string) {
@@ -474,10 +528,10 @@ func (store MsgStore) GetAciNetworkType() (string, string) {
 func (store MsgStore) GetArmClientSecret() (string, string) {
 	return store.msgItem("ArmClientSecret")
 }
-func (store MsgStore) GetArmSubscriptionId() (string, string) {
+func (store MsgStore) GetArmSubscriptionID() (string, string) {
 	return store.msgItem("ArmSubscriptionId")
 }
-func (store MsgStore) GetArmTenantId() (string, string) {
+func (store MsgStore) GetArmTenantID() (string, string) {
 	return store.msgItem("ArmTenantId")
 }
 func (store MsgStore) GetArmEnvironment() (string, string) {
@@ -502,7 +556,7 @@ func (store MsgStore) GetPreSize() string {
 	item, _ := store.msgItem("SizePre")
 	return item
 }
-func (store MsgStore) GetPreCpu() string {
+func (store MsgStore) GetPreCPU() string {
 	item, _ := store.msgItem("CpuPre")
 	return item
 }
@@ -534,24 +588,32 @@ func (store MsgStore) GetPreRegion() string {
 	item, _ := store.msgItem("RegionPre")
 	return item
 }
-func (store MsgStore) GetPreSecGpId() string {
+func (store MsgStore) GetPreSecGpID() string {
 	item, _ := store.msgItem("SecGpIdPre")
 	return item
 }
-func (store MsgStore) GetPreVSwitchId() string {
+func (store MsgStore) GetPreVSwitchID() string {
 	item, _ := store.msgItem("VSwitchIdPre")
+	return item
+}
+func (store MsgStore) GetPreCloudProvider() string {
+	item, _ := store.msgItem("CloudProviderPre")
 	return item
 }
 func (store MsgStore) GetPrePat() string {
 	item, _ := store.msgItem("PatPre")
 	return item
 }
-func (store MsgStore) GetPreUrl() string {
+func (store MsgStore) GetPreURL() string {
 	item, _ := store.msgItem("UrlPre")
 	return item
 }
 func (store MsgStore) GetPreGcpCredential() string {
 	item, _ := store.msgItem("GcpCredentialPre")
+	return item
+}
+func (store MsgStore) GetPreRepoRegToken() string {
+	item, _ := store.msgItem("RepoRegTokenPre")
 	return item
 }
 func (store MsgStore) GetPreGcpProject() string {
@@ -586,7 +648,7 @@ func (store MsgStore) GetPreImageVersion() string {
 	item, _ := store.msgItem("ImageVersionPre")
 	return item
 }
-func (store MsgStore) GetPreArmClientId() string {
+func (store MsgStore) GetPreArmClientID() string {
 	item, _ := store.msgItem("ArmClientIdPre")
 	return item
 }
@@ -606,11 +668,11 @@ func (store MsgStore) GetPreArmClientSecret() string {
 	item, _ := store.msgItem("ArmClientSecretPre")
 	return item
 }
-func (store MsgStore) GetPreArmSubscriptionId() string {
+func (store MsgStore) GetPreArmSubscriptionID() string {
 	item, _ := store.msgItem("ArmSubscriptionIdPre")
 	return item
 }
-func (store MsgStore) GetPreArmTenantId() string {
+func (store MsgStore) GetPreArmTenantID() string {
 	item, _ := store.msgItem("ArmTenantIdPre")
 	return item
 }
@@ -632,64 +694,68 @@ func (store MsgStore) GetPreArmSubnetID() string {
 }
 
 func (store MsgStore) AnyChange() bool {
-	url, _ := store.GetUrl()
+	url, _ := store.GetURL()
 	pat, _ := store.GetPat()
-	sg, _ := store.GetSecGpId()
-	sw, _ := store.GetVSwitchId()
+	sg, _ := store.GetSecGpID()
+	sw, _ := store.GetVSwitchID()
+	pr, _ := store.GetCloudProvider()
 	region, _ := store.GetRegion()
 	secret, _ := store.GetSecret()
 	key, _ := store.GetKey()
 	size, _ := store.GetSize()
-	cpu, _ := store.GetCpu()
+	cpu, _ := store.GetCPU()
 	memory, _ := store.GetMemory()
 	labels, _ := store.GetLabels()
 	chargelabels, _ := store.GetChargeLabels()
 	runnergroup, _ := store.GetRunnerGroup()
-	gcp_credentials, _ := store.GetGcpCredential()
-	gcp_project, _ := store.GetGcpProject()
-	gcp_region, _ := store.GetGcpRegion()
-	gcp_sa, _ := store.GetGcpSA()
-	gcp_apikey, _ := store.GetGcpApikey()
-	gcp_dind, _ := store.GetGcpDind()
-	gcp_vpc, _ := store.GetGcpVpc()
-	gcp_subnet, _ := store.GetGcpSubnet()
-	image_ver, _ := store.GetImageVersion()
-	arm_client_id, _ := store.GetArmClientId()
-	aci_location, _ := store.GetAciLocation()
-	aci_sku, _ := store.GetAciSku()
-	aci_network_type, _ := store.GetAciNetworkType()
-	arm_client_secret, _ := store.GetArmClientSecret()
-	arm_subscription_id, _ := store.GetArmSubscriptionId()
-	arm_tenant_id, _ := store.GetArmTenantId()
-	arm_environment, _ := store.GetArmEnvironment()
-	arm_rp_registration, _ := store.GetArmRPRegistration()
-	arm_resource_group_name, _ := store.GetArmResourceGroupName()
-	arm_subnet_id, _ := store.GetArmSubnetID()
-	return !(store.GetPreUrl() == url && store.GetPrePat() == pat &&
-		store.GetPreSecGpId() == sg && store.GetPreVSwitchId() == sw &&
+	gcpCredentials, _ := store.GetGcpCredential()
+	repoRegToken, _ := store.GetRepoRegToken()
+	gcpProject, _ := store.GetGcpProject()
+	gcpRegion, _ := store.GetGcpRegion()
+	gcpSa, _ := store.GetGcpSA()
+	gcpApikey, _ := store.GetGcpApikey()
+	gcpDind, _ := store.GetGcpDind()
+	gcpVpc, _ := store.GetGcpVpc()
+	gcpSubnet, _ := store.GetGcpSubnet()
+	imageVer, _ := store.GetImageVersion()
+	armClientID, _ := store.GetArmClientID()
+	aciLocation, _ := store.GetAciLocation()
+	aciSku, _ := store.GetAciSku()
+	aciNetworkType, _ := store.GetAciNetworkType()
+	armClientSecret, _ := store.GetArmClientSecret()
+	armSubscriptionID, _ := store.GetArmSubscriptionID()
+	armTenantID, _ := store.GetArmTenantID()
+	armEnvironment, _ := store.GetArmEnvironment()
+	armRpRegistration, _ := store.GetArmRPRegistration()
+	armResourceGroupName, _ := store.GetArmResourceGroupName()
+	armSubnetID, _ := store.GetArmSubnetID()
+	sameConfig := store.GetPreURL() == url && store.GetPrePat() == pat &&
+		store.GetPreSecGpID() == sg && store.GetPreVSwitchID() == sw &&
 		store.GetPreRegion() == region && store.GetPreSecret() == secret &&
 		store.GetPreKey() == key && store.GetPreSize() == size &&
-		store.GetPreCpu() == cpu && store.GetPreMemory() == memory &&
+		store.GetPreCPU() == cpu && store.GetPreMemory() == memory &&
 		store.GetPreLabels() == labels && store.GetPreChargeLabels() == chargelabels &&
-		store.GetPreRunnerGroup() == runnergroup &&
-		gcp_credentials == store.GetPreGcpCredential() &&
-		gcp_project == store.GetPreGcpProject() &&
-		gcp_region == store.GetPreGcpRegion() &&
-		gcp_sa == store.GetPreGcpSA() &&
-		gcp_apikey == store.GetPreGcpApikey() &&
-		gcp_dind == store.GetPreGcpDind() &&
-		gcp_vpc == store.GetPreGcpVpc() &&
-		gcp_subnet == store.GetPreGcpSubnet() &&
-		image_ver == store.GetPreImageVersion() &&
-		arm_client_id == store.GetPreArmClientId() &&
-		aci_location == store.GetPreAciLocation() &&
-		aci_sku == store.GetPreAciSku() &&
-		aci_network_type == store.GetPreAciNetworkType() &&
-		arm_client_secret == store.GetPreArmClientSecret() &&
-		arm_subscription_id == store.GetPreArmSubscriptionId() &&
-		arm_tenant_id == store.GetPreArmTenantId() &&
-		arm_environment == store.GetPreArmEnvironment() &&
-		arm_rp_registration == store.GetPreArmRPRegistration() &&
-		arm_resource_group_name == store.GetPreArmResourceGroupName() &&
-		arm_subnet_id == store.GetPreArmSubnetID())
+		store.GetPreRunnerGroup() == runnergroup && store.GetPreCloudProvider() == pr &&
+		gcpCredentials == store.GetPreGcpCredential() &&
+		repoRegToken == store.GetPreRepoRegToken() &&
+		gcpProject == store.GetPreGcpProject() &&
+		gcpRegion == store.GetPreGcpRegion() &&
+		gcpSa == store.GetPreGcpSA() &&
+		gcpApikey == store.GetPreGcpApikey() &&
+		gcpDind == store.GetPreGcpDind() &&
+		gcpVpc == store.GetPreGcpVpc() &&
+		gcpSubnet == store.GetPreGcpSubnet() &&
+		imageVer == store.GetPreImageVersion() &&
+		armClientID == store.GetPreArmClientID() &&
+		aciLocation == store.GetPreAciLocation() &&
+		aciSku == store.GetPreAciSku() &&
+		aciNetworkType == store.GetPreAciNetworkType() &&
+		armClientSecret == store.GetPreArmClientSecret() &&
+		armSubscriptionID == store.GetPreArmSubscriptionID() &&
+		armTenantID == store.GetPreArmTenantID() &&
+		armEnvironment == store.GetPreArmEnvironment() &&
+		armRpRegistration == store.GetPreArmRPRegistration() &&
+		armResourceGroupName == store.GetPreArmResourceGroupName() &&
+		armSubnetID == store.GetPreArmSubnetID()
+	return !sameConfig
 }

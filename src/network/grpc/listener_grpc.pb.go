@@ -11,7 +11,7 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	RunnerListener_NotifyRunnerState_FullMethodName = "/grpc.RunnerListener/NotifyRunnerState"
+	RunnerListenerNotifyRunnerStateFullMethodName = "/grpc.RunnerListener/NotifyRunnerState"
 )
 
 type RunnerListenerClient interface {
@@ -29,7 +29,7 @@ func NewRunnerListenerClient(cc grpc.ClientConnInterface) RunnerListenerClient {
 func (c *runnerListenerClient) NotifyRunnerState(ctx context.Context, in *RunnerState, opts ...grpc.CallOption) (*ProcessState, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ProcessState)
-	err := c.cc.Invoke(ctx, RunnerListener_NotifyRunnerState_FullMethodName, in, out, cOpts...)
+	err := c.cc.Invoke(ctx, RunnerListenerNotifyRunnerStateFullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -57,10 +57,10 @@ func RegisterRunnerListenerServer(s grpc.ServiceRegistrar, srv RunnerListenerSer
 	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
 		t.testEmbeddedByValue()
 	}
-	s.RegisterService(&RunnerListener_ServiceDesc, srv)
+	s.RegisterService(&RunnerListenerServiceDesc, srv)
 }
 
-func _RunnerListener_NotifyRunnerState_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+func _RunnerListenerNotifyRunnerStateHandler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(RunnerState)
 	if err := dec(in); err != nil {
 		return nil, err
@@ -70,7 +70,7 @@ func _RunnerListener_NotifyRunnerState_Handler(srv interface{}, ctx context.Cont
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: RunnerListener_NotifyRunnerState_FullMethodName,
+		FullMethod: RunnerListenerNotifyRunnerStateFullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(RunnerListenerServer).NotifyRunnerState(ctx, req.(*RunnerState))
@@ -78,13 +78,13 @@ func _RunnerListener_NotifyRunnerState_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
-var RunnerListener_ServiceDesc = grpc.ServiceDesc{
+var RunnerListenerServiceDesc = grpc.ServiceDesc{
 	ServiceName: "grpc.RunnerListener",
 	HandlerType: (*RunnerListenerServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
 			MethodName: "NotifyRunnerState",
-			Handler:    _RunnerListener_NotifyRunnerState_Handler,
+			Handler:    _RunnerListenerNotifyRunnerStateHandler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

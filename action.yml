@@ -76,6 +76,13 @@ runs:
       continue-on-error: false
       run: |
         make lazy_install ralias="${{ inputs.reg }}"
+    - name: lazy destroy
+      id: register-ci-lazy-destroy
+      shell: bash
+      if: inputs.op == 'lazy_destroy'
+      continue-on-error: false
+      run: |
+        make lazy_destroy ralias=test
     - name: allen install
       id: register-ci-allen-install
       shell: bash
@@ -104,3 +111,18 @@ runs:
         wget https://releases.hashicorp.com/terraform/${TF_VER}/terraform_${TF_VER}_linux_${TF_PLATFORM}.zip
         unzip terraform_${TF_VER}_linux_${TF_PLATFORM}.zip && cp ./terraform /usr/local/bin/ 
         rm ./terraform; rm ./terraform_${TF_VER}_linux_${TF_PLATFORM}.zip
+    - name: setup go
+      uses: actions/setup-go@v4
+      if: inputs.op == 'gen_safer_app'
+      with:
+        go-version: 1.21.1  
+        cache-dependency-path: ./src/*.sum
+    - name: safer env app
+      id: gen-safer-env-app
+      shell: bash
+      if: inputs.op == 'gen_safer_app'
+      run: |
+        echo "machine github.com login ${GIT_ACCESS_TOKEN_USR} password ${GIT_ACCESS_TOKEN_PWD}" >> ~/.netrc; chmod 600 ~/.netrc
+        mkdir ~/safer-app; cd ./src; go mod download 
+        go build -o ~/safer-app/safer ./safer/safer.go; rm ~/.netrc
+
